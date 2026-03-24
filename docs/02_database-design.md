@@ -2,39 +2,68 @@
 
 ## Tables
 
+### home_classes
+- id(PK)
+- class_code
+- major
+- department
+
 ### students
-- id
+- id(PK)
 - student_code
 - name
-- class_id
+- home_class_id
 - created_at
 
-### classes
-- id
-- class_name
+### teachers
+- id(PK)
+- teacher_code
+- teacher_name
+- email
+- password_hash
+
+### course_classes
+- id(PK)
+- course_code
+- course_name
+- semester
+- teacher_id
+
+### enrollments
+- student_id(FK)
+- course_class_id(FK)
 
 ### sessions
-- id
-- class_id
+- id(PK)
+- course_class_id
 - start_time
 - end_time
-- status
+- status(pending, active, completed)
 
 ### attendance
-- id
+- id(PK)
 - session_id
 - student_id
 - checkin_time
+- status(present, late)
+- confidence_score
 
 ### face_embeddings
-- id
-- student_id
+- id(PK)
+- student_id(FK)
 - embedding (vector)
-- created_at
 
 ## Relationships
+### One-to-Many Relationships (1:N)
+- home_classes (1) -> (N) students: One home class contains many students. Each student belongs to exactly one home class.
+- teachers (1) -> (N) course_classes: One teacher can be assigned to teach multiple course classes.
+- course_classes (1) → (N) sessions: A course class consists of multiple sessions throughout the semester.
+- sessions (1) → (N) attendance: Each session has multiple attendance records (corresponding to the number of participating students).
+- students (1) → (N) attendance: A student has multiple attendance records across different sessions.
+- students (1) → (N) face_embeddings: A student can have one or more face embedding vectors (to improve accuracy under different angles and lighting conditions).
+### Many-to-Many Relationships (N:N)
+- students (N) ↔ (N) course_classes: A student can enroll in multiple course classes, and each course class can have multiple students.
 
-Class → Students
-Class → Sessions
-Session → Attendance
-Student → Face Embeddings
+This relationship is resolved through a junction table called enrollments.
+
+(students 1 → N enrollments N ← 1 course_classes)
