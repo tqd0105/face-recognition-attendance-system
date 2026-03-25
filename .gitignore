@@ -1,0 +1,61 @@
+# ------------------------------
+# Global OS/editor artifacts
+# ------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# ------------------------------
+# Logs
+# ------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ------------------------------
+# Environment files
+# ------------------------------
+.env
+.env.*
+!.env.example
+
+# ------------------------------
+# Node / Next.js
+# ------------------------------
+node_modules/
+.next/
+out/
+dist/
+coverage/
+
+# ------------------------------
+# Python
+# ------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# ------------------------------
+# Build/runtime temp
+# ------------------------------
+.tmp/
+tmp/
+*.pid
+*.seed
+
+# ------------------------------
+# Project-specific
+# ------------------------------
+ai-service/.venv/
+ai-service/__pycache__/
