@@ -1,13 +1,17 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const db = require('./config/db');
+const authRoutes = require('./routes/authRoutes');
 
 const app = express();
-const db = require('./config/db');
 
 // Middleware
 app.use(cors());
 app.use(express.json()); // Cho phép backend đọc được data JSON từ Frontend gửi lên
+
+// Connect with Route
+app.use('/api/auth', authRoutes); 
 
 // API Test thử
 app.get('/', (req, res) => {
