@@ -28,6 +28,7 @@ export default function AttendancePage() {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const timerRef = useRef<number | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
 
     const [sessionId, setSessionId] = useState("sess_demo_001");
     const [minSimilarity, setMinSimilarity] = useState(0.6);
@@ -37,15 +38,31 @@ export default function AttendancePage() {
     const [popupText, setPopupText] = useState<string | null>(null);
     const [isBusy, setIsBusy] = useState(false);
 
+    function stopCamera() {
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+        setIsCameraReady(false);
+    }
+
     useEffect(() => {
-        let stream: MediaStream | null = null;
+        let isMounted = true;
 
         async function initCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
+                const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
                     audio: false,
                 });
+
+                if (!isMounted) {
+                    stream.getTracks().forEach((track) => track.stop());
+                    return;
+                }
+
+                streamRef.current = stream;
 
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
@@ -63,7 +80,8 @@ export default function AttendancePage() {
             if (timerRef.current) {
                 window.clearInterval(timerRef.current);
             }
-            stream?.getTracks().forEach((track) => track.stop());
+            isMounted = false;
+            stopCamera();
         };
     }, []);
 
@@ -198,7 +216,7 @@ export default function AttendancePage() {
     return (
         <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
             <section className="mx-auto w-full max-w-5xl rounded-3xl border border-slate-200 bg-white p-4 shadow-xl sm:p-7">
-                <header className="rounded-2xl bg-sky-700 p-5 text-white shadow-lg sm:p-6">
+                <header className="rounded-2xl bg-slate-800 p-5 text-white shadow-lg sm:p-6">
                     <div className="mb-3 flex items-center gap-3">
                         <div className="rounded-xl bg-white/20 p-2.5 shadow-md">
                             <ScanSearch className="h-7 w-7" />
@@ -206,21 +224,21 @@ export default function AttendancePage() {
                         <p className="text-xs font-semibold uppercase tracking-[0.16em]">Realtime Attendance</p>
                     </div>
                     <h1 className="text-2xl font-bold sm:text-3xl">Scan Live Camera Frames</h1>
-                    <p className="mt-2 text-sm text-sky-50 sm:text-base">
+                    <p className="mt-2 text-sm text-slate-100 sm:text-base">
                         Frames are sent to backend attendance API. Backend handles business rules and duplicate prevention.
                     </p>
                 </header>
 
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-100 p-3 shadow-sm">
-                    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-zinc-900">
+                    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-800">
                         <video ref={videoRef} className="aspect-video w-full object-cover" autoPlay muted playsInline />
                         {!isCameraReady && (
-                            <div className="absolute inset-0 grid place-items-center bg-black/45 text-sm font-medium text-white">
+                            <div className="absolute inset-0 grid place-items-center bg-slate-900/55 text-sm font-medium text-white">
                                 Waiting for camera permission...
                             </div>
                         )}
                         {popupText && (
-                            <div className="absolute left-3 right-3 top-3 rounded-xl bg-sky-950/85 px-4 py-2.5 text-sm font-semibold text-sky-50 shadow-xl">
+                            <div className="absolute left-3 right-3 top-3 rounded-xl bg-slate-900/85 px-4 py-2.5 text-sm font-semibold text-slate-100 shadow-xl">
                                 {popupText}
                             </div>
                         )}
@@ -237,7 +255,7 @@ export default function AttendancePage() {
                         <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                         <input
                             id="session-id"
-                            className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                            className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             value={sessionId}
                             onChange={(e) => setSessionId(e.target.value)}
                             autoComplete="off"
@@ -251,7 +269,7 @@ export default function AttendancePage() {
                         <ShieldCheck className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                         <input
                             id="similarity"
-                            className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                            className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             type="number"
                             min={0}
                             max={1}
@@ -264,7 +282,7 @@ export default function AttendancePage() {
 
                 <div className="mt-4 flex flex-wrap gap-3">
                     <button
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-sky-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
                         onClick={startScanning}
                         disabled={!isCameraReady || isScanning || !sessionId.trim()}
                     >
@@ -303,11 +321,11 @@ export default function AttendancePage() {
                     )}
                 </section>
 
-                <footer className="mt-5 flex flex-wrap gap-4 text-sm font-semibold text-sky-700">
-                    <Link className="rounded-lg px-2 py-1 hover:bg-sky-50" href="/enrollment">
+                <footer className="mt-5 flex flex-wrap gap-4 text-sm font-semibold text-blue-700">
+                    <Link className="rounded-lg px-2 py-1 hover:bg-blue-50" href="/enrollment">
                         Go to enrollment
                     </Link>
-                    <Link className="rounded-lg px-2 py-1 hover:bg-sky-50" href="/">
+                    <Link className="rounded-lg px-2 py-1 hover:bg-blue-50" href="/">
                         Back to dashboard
                     </Link>
                 </footer>
