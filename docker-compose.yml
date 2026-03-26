@@ -2,7 +2,6 @@ version: '3.8'
 
 services:
   db:
-    # Sử dụng image có sẵn extension pgvector cực kỳ quan trọng cho AI
     image: ankane/pgvector:latest
     container_name: attendance_postgres
     restart: always
@@ -13,7 +12,6 @@ services:
     ports:
       - "${DB_PORT}:5432"
     volumes:
-      # Lưu trữ dữ liệu vật lý ra ngoài máy tính để không bị mất khi tắt Docker
       - postgres_data:/var/lib/postgresql/data
 
 volumes:
