@@ -41,6 +41,8 @@ The system must be secure; lecturers must log in to access their classes.
 ## AI Service APIs (Internal APIs - NodeJS ↔ Python Communication)
 These APIs are NOT accessible by the Frontend (NextJS). They are used internally by the NodeJS backend to communicate with the FastAPI AI service.
 
+Detailed request/response schemas and rules are documented in `docs/08_backend-ai-api-contract.md`.
+
 - POST /ai/encode: Accept an image file (Base64/Multipart) → Returns a float array (128 or 512-dimensional vector).
 - POST /ai/load-embeddings: NodeJS sends a JSON array [ { student_id, vector }, ... ] for the AI service to temporarily store in RAM when a session starts.
 - POST /ai/recognize: NodeJS sends an image frame (may contain multiple people) + session_id → AI scans against loaded data in RAM and returns a list of recognized student_ids.
