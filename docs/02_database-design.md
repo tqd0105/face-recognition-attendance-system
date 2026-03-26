@@ -7,13 +7,17 @@
 - class_code
 - major
 - department
+- created_at
 
 ### students
 - id(PK)
 - student_code
 - name
+- email
 - home_class_id
+- status
 - created_at
+- updated_at
 
 ### teachers
 - id(PK)
@@ -21,6 +25,9 @@
 - teacher_name
 - email
 - password_hash
+- status
+- created_at
+- updated_at
 
 ### course_classes
 - id(PK)
@@ -28,6 +35,7 @@
 - course_name
 - semester
 - teacher_id
+- created_at
 
 ### enrollments
 - student_id(FK)
@@ -36,9 +44,12 @@
 ### sessions
 - id(PK)
 - course_class_id
+- session_date
 - start_time
 - end_time
 - status(pending, active, completed)
+- created_at
+
 
 ### attendance
 - id(PK)
@@ -52,6 +63,8 @@
 - id(PK)
 - student_id(FK)
 - embedding (vector)
+- quality_score
+- created_at
 
 ## Relationships
 ### One-to-Many Relationships (1:N)
