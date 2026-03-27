@@ -34,3 +34,17 @@ exports.loginTeacher = async (req, res) => {
         res.status(500).json({ message: 'Lỗi server hệ thống' });
     }
 };
+
+// @desc    Lấy thông tin giảng viên đang đăng nhập
+// @route   GET /api/auth/me
+// @access  Private (Cần có Token)
+exports.getMe = async (req, res) => {
+    try {
+        res.json({
+            message: 'Xác thực thành công!',
+            user_info: req.user
+        });
+    } catch (error) {
+        res.status(500).json({message: 'Lỗi server hệ thống!'});
+    }
+};
