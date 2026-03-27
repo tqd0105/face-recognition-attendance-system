@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
+const classRoutes = require('./routes/classRoutes')
 
 const app = express();
 
@@ -17,6 +18,8 @@ app.use('/api/auth', authRoutes);
 app.get('/', (req, res) => {
   res.send('Face Recognition Backend is running! 🚀');
 });
+
+app.use('/api/classes', classRoutes);
 
 // Khởi động server
 const PORT = process.env.PORT || 5000;
