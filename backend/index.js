@@ -3,7 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
-const classRoutes = require('./routes/classRoutes')
+const classRoutes = require('./routes/classRoutes');
+const studentRoutes = require('./routes/studentRoutes');
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api/classes', classRoutes);
+app.use('/api/students', studentRoutes);
 
 // Khởi động server
 const PORT = process.env.PORT || 5000;
