@@ -1,4 +1,4 @@
-﻿# face-recognition-attendance-system
+# face-recognition-attendance-system
 
 Face Recognition Attendance System.
 

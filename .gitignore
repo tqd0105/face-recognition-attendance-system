@@ -59,3 +59,8 @@ tmp/
 # ------------------------------
 ai-service/.venv/
 ai-service/__pycache__/
+
+node_modules/
+backend/node_modules/
+.env
+backend/.env
