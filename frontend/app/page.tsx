@@ -67,6 +67,18 @@ export default function Home() {
           </article>
         </div>
 
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <p className="text-sm text-slate-700">
+            First time setup: sign in as teacher to store auth token for protected APIs.
+          </p>
+          <Link
+            className="mt-3 inline-flex items-center justify-center rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-slate-900 hover:shadow-lg"
+            href="/login"
+          >
+            Open Login
+          </Link>
+        </div>
+
       </section>
     </main>
   );

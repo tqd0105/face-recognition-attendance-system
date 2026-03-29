@@ -3,22 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Clock3, Eye, ScanSearch, ShieldCheck } from "lucide-react";
-import { backendUrl } from "@/lib/backend";
+import { authHeaders, backendUrl, getAccessToken } from "@/lib/backend";
 
-type RecognitionItem = {
-    student_id: string | null;
-    similarity: number;
-    status: "matched" | "unknown";
-};
-
-type AttendanceResponse = {
-    success?: boolean;
-    results?: RecognitionItem[];
+type AttendanceRow = {
+    id: number;
+    student_id: number;
+    status: "present" | "late" | "absent";
+    confidence_score: number | null;
+    check_in_time: string;
+    student_code?: string;
+    name?: string;
 };
 
 type EventItem = {
     id: string;
-    status: "matched" | "unknown";
+    status: string;
     studentLabel: string;
     similarity: number;
     createdAt: string;
@@ -32,6 +31,7 @@ export default function AttendancePage() {
 
     const [sessionId, setSessionId] = useState("sess_demo_001");
     const [minSimilarity, setMinSimilarity] = useState(0.6);
+    const [studentId, setStudentId] = useState("");
     const [isCameraReady, setIsCameraReady] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
     const [events, setEvents] = useState<EventItem[]>([]);
@@ -85,107 +85,39 @@ export default function AttendancePage() {
         };
     }, []);
 
-    function captureBlob(): Promise<Blob> {
-        return new Promise((resolve, reject) => {
-            const video = videoRef.current;
-            const canvas = canvasRef.current;
-
-            if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
-                reject(new Error("Camera is not ready"));
-                return;
-            }
-
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext("2d");
-
-            if (!ctx) {
-                reject(new Error("Cannot access canvas context"));
-                return;
-            }
-
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob(
-                (blob) => {
-                    if (!blob) {
-                        reject(new Error("Failed to capture frame"));
-                        return;
-                    }
-                    resolve(blob);
-                },
-                "image/jpeg",
-                0.9,
-            );
-        });
-    }
-
-    function blobToDataUrl(blob: Blob): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                if (typeof reader.result === "string") {
-                    resolve(reader.result);
-                    return;
-                }
-                reject(new Error("Cannot convert image blob"));
-            };
-            reader.onerror = () => reject(new Error("FileReader failed"));
-            reader.readAsDataURL(blob);
-        });
-    }
-
     async function scanOnce() {
-        if (isBusy || !isCameraReady) {
+        const accessToken = getAccessToken();
+        if (isBusy || !sessionId.trim() || !accessToken) {
             return;
         }
 
         try {
             setIsBusy(true);
 
-            const blob = await captureBlob();
-            const imageBase64 = await blobToDataUrl(blob);
-
-            const response = await fetch(backendUrl("/attendance/recognize"), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    session_id: sessionId,
-                    image_base64: imageBase64,
-                    min_similarity: minSimilarity,
-                    top_k: 1,
-                }),
+            const response = await fetch(backendUrl(`/api/attendance/session/${sessionId}`), {
+                method: "GET",
+                headers: {
+                    ...authHeaders(accessToken),
+                },
             });
 
-            const data = (await response.json().catch(() => ({}))) as AttendanceResponse;
-            if (!response.ok || !data.results) {
+            const data = (await response.json().catch(() => ([]))) as AttendanceRow[];
+            if (!response.ok || !Array.isArray(data)) {
                 return;
             }
 
-            const newEvents = data.results.slice(0, 3).map((item, index) => {
-                const studentLabel = item.student_id ?? "Unknown";
+            const newEvents = data.slice(0, 10).map((item, index) => {
+                const studentLabel = item.name ?? item.student_code ?? `student_${item.student_id}`;
                 return {
-                    id: `${Date.now()}-${index}`,
+                    id: `${item.id}-${index}`,
                     status: item.status,
                     studentLabel,
-                    similarity: item.similarity,
-                    createdAt: new Date().toLocaleTimeString(),
+                    similarity: item.confidence_score ?? 0,
+                    createdAt: new Date(item.check_in_time).toLocaleTimeString(),
                 } satisfies EventItem;
             });
 
-            if (newEvents.length > 0) {
-                setEvents((prev) => [...newEvents, ...prev].slice(0, 10));
-
-                const first = newEvents[0];
-                setPopupText(
-                    first.status === "matched"
-                        ? `Recognized: ${first.studentLabel} (${first.similarity.toFixed(2)})`
-                        : "Unknown face detected",
-                );
-
-                window.setTimeout(() => {
-                    setPopupText(null);
-                }, 1800);
-            }
+            setEvents(newEvents);
         } catch {
             // Keep scanning loop alive even if one frame fails.
         } finally {
@@ -193,8 +125,42 @@ export default function AttendancePage() {
         }
     }
 
+    async function createCheckIn() {
+        const accessToken = getAccessToken();
+        if (!sessionId.trim() || !studentId.trim() || !accessToken) {
+            setPopupText("Missing auth token. Please login first.");
+            return;
+        }
+
+        try {
+            const response = await fetch(backendUrl("/api/attendance/check-in"), {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...authHeaders(accessToken),
+                },
+                body: JSON.stringify({
+                    session_id: Number(sessionId),
+                    student_id: Number(studentId),
+                    status: "present",
+                    confidence_score: minSimilarity,
+                }),
+            });
+
+            const data = (await response.json().catch(() => ({}))) as { message?: string };
+            setPopupText(data.message ?? (response.ok ? "Check-in success" : "Check-in failed"));
+            window.setTimeout(() => setPopupText(null), 1800);
+            if (response.ok) {
+                void scanOnce();
+            }
+        } catch {
+            setPopupText("Cannot connect to backend service");
+            window.setTimeout(() => setPopupText(null), 1800);
+        }
+    }
+
     function startScanning() {
-        if (!isCameraReady || isScanning) {
+        if (isScanning) {
             return;
         }
         setIsScanning(true);
@@ -225,7 +191,7 @@ export default function AttendancePage() {
                     </div>
                     <h1 className="text-2xl font-bold sm:text-3xl">Scan Live Camera Frames</h1>
                     <p className="mt-2 text-sm text-slate-100 sm:text-base">
-                        Frames are sent to backend attendance API. Backend handles business rules and duplicate prevention.
+                        Backend compatibility mode: create check-in records and poll `/api/attendance/session/:session_id`.
                     </p>
                 </header>
 
@@ -278,25 +244,49 @@ export default function AttendancePage() {
                             onChange={(e) => setMinSimilarity(Number(e.target.value))}
                         />
                     </div>
+
+                    <label className="text-sm font-semibold text-slate-700" htmlFor="student-id">
+                        Student ID (check-in)
+                    </label>
+                    <input
+                        id="student-id"
+                        className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        value={studentId}
+                        onChange={(e) => setStudentId(e.target.value)}
+                        placeholder="e.g. 1"
+                        autoComplete="off"
+                    />
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-3">
                     <button
                         className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
                         onClick={startScanning}
-                        disabled={!isCameraReady || isScanning || !sessionId.trim()}
+                        disabled={isScanning || !sessionId.trim()}
                     >
                         <Eye className="h-5 w-5" />
-                        Start Scan
+                        Start Auto Refresh
                     </button>
                     <button
                         className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                         onClick={stopScanning}
                         disabled={!isScanning}
                     >
-                        Stop Scan
+                        Stop Refresh
+                    </button>
+                    <button
+                        className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md"
+                        onClick={createCheckIn}
+                    >
+                        Create Check-in
                     </button>
                 </div>
+
+                {!getAccessToken() && (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+                        You are not logged in. Please sign in at <Link className="underline" href="/login">/login</Link> first.
+                    </div>
+                )}
 
                 <section className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
                     <h2 className="text-base font-bold text-slate-900">Latest Events</h2>
@@ -310,7 +300,7 @@ export default function AttendancePage() {
                                     className="grid gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"
                                 >
                                     <strong className="text-slate-900">{event.studentLabel}</strong>
-                                    <span className={event.status === "matched" ? "font-semibold text-emerald-700" : "font-semibold text-amber-700"}>
+                                    <span className={event.status === "present" ? "font-semibold text-emerald-700" : "font-semibold text-amber-700"}>
                                         {event.status}
                                     </span>
                                     <span>sim={event.similarity.toFixed(2)}</span>

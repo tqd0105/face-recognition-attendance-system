@@ -3,10 +3,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Camera, CheckCircle2, UserRound } from "lucide-react";
-import { backendUrl } from "@/lib/backend";
+import { authHeaders, backendUrl, getAccessToken } from "@/lib/backend";
 
 type EnrollmentResult = {
-    success: boolean;
+    success?: boolean;
     message?: string;
     student_id?: string;
 };
@@ -17,6 +17,7 @@ export default function EnrollmentPage() {
     const streamRef = useRef<MediaStream | null>(null);
 
     const [studentId, setStudentId] = useState("");
+    const [courseClassId, setCourseClassId] = useState("");
     const [isCameraReady, setIsCameraReady] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [result, setResult] = useState<EnrollmentResult | null>(null);
@@ -65,40 +66,6 @@ export default function EnrollmentPage() {
         };
     }, []);
 
-    function captureBlob(): Promise<Blob> {
-        return new Promise((resolve, reject) => {
-            const video = videoRef.current;
-            const canvas = canvasRef.current;
-
-            if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
-                reject(new Error("Camera is not ready"));
-                return;
-            }
-
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext("2d");
-
-            if (!ctx) {
-                reject(new Error("Cannot access canvas context"));
-                return;
-            }
-
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob(
-                (blob) => {
-                    if (!blob) {
-                        reject(new Error("Failed to capture frame"));
-                        return;
-                    }
-                    resolve(blob);
-                },
-                "image/jpeg",
-                0.92,
-            );
-        });
-    }
-
     async function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
 
@@ -107,18 +74,31 @@ export default function EnrollmentPage() {
             return;
         }
 
+        if (!courseClassId.trim()) {
+            setResult({ success: false, message: "Please enter course class ID" });
+            return;
+        }
+
+        const accessToken = getAccessToken();
+        if (!accessToken) {
+            setResult({ success: false, message: "Missing auth token. Please login first." });
+            return;
+        }
+
         try {
             setIsSubmitting(true);
             setResult(null);
 
-            const frameBlob = await captureBlob();
-            const formData = new FormData();
-            formData.append("student_id", studentId.trim());
-            formData.append("image", frameBlob, `${studentId.trim()}.jpg`);
-
-            const response = await fetch(backendUrl("/biometrics/enroll"), {
+            const response = await fetch(backendUrl("/api/enrollments"), {
                 method: "POST",
-                body: formData,
+                headers: {
+                    "Content-Type": "application/json",
+                    ...authHeaders(accessToken),
+                },
+                body: JSON.stringify({
+                    student_id: Number(studentId),
+                    course_class_id: Number(courseClassId),
+                }),
             });
 
             const data = (await response.json().catch(() => ({}))) as EnrollmentResult;
@@ -134,7 +114,7 @@ export default function EnrollmentPage() {
             setResult({
                 success: true,
                 student_id: data.student_id ?? studentId.trim(),
-                message: "Enrollment success",
+                message: data.message ?? "Enrollment success",
             });
         } catch {
             setResult({ success: false, message: "Cannot connect to backend service" });
@@ -155,7 +135,7 @@ export default function EnrollmentPage() {
                     </div>
                     <h1 className="text-2xl font-bold sm:text-3xl">Register Student Face</h1>
                     <p className="mt-2 text-sm text-slate-100 sm:text-base">
-                        Capture one clear frontal image. Frontend sends image to backend, backend calls AI service.
+                        Compatibility mode with current backend branch: this page enrolls student into course class via `/api/enrollments`.
                     </p>
                 </header>
 
@@ -188,15 +168,33 @@ export default function EnrollmentPage() {
                         />
                     </div>
 
+                    <label className="text-sm font-semibold text-slate-700" htmlFor="course-class-id">
+                        Course Class ID
+                    </label>
+                    <input
+                        id="course-class-id"
+                        className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        value={courseClassId}
+                        onChange={(e) => setCourseClassId(e.target.value)}
+                        placeholder="e.g. 1"
+                        autoComplete="off"
+                    />
+
                     <button
                         className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={!isCameraReady || isSubmitting}
+                        disabled={isSubmitting}
                         type="submit"
                     >
                         <CheckCircle2 className="h-5 w-5" />
                         {isSubmitting ? "Submitting..." : "Capture & Enroll"}
                     </button>
                 </form>
+
+                {!getAccessToken() && (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+                        You are not logged in. Please sign in at <Link className="underline" href="/login">/login</Link> first.
+                    </div>
+                )}
 
                 {result && (
                     <div
