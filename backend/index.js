@@ -8,6 +8,7 @@ const studentRoutes = require('./routes/studentRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const sessionRoutes = require('./routes/sessionRoutes');
+const attendanceRoutes = require('./routes/attendanceRoutes');
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use('/api/students', studentRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/attendance', attendanceRoutes);
 
 // Khởi động server
 const PORT = process.env.PORT || 5000;
