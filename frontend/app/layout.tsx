@@ -13,8 +13,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Face Attendance Frontend",
+  title: "Face Recognition Attendance System",
   description: "Enrollment and realtime attendance interface",
+  icons: {
+    icon: "/icons/face-id.png",
+  },
 };
 
 export default function RootLayout({
