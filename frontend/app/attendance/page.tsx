@@ -6,7 +6,10 @@ import { AlertTriangle, Clock3, Eye, ShieldAlert, ShieldCheck, X } from "lucide-
 import { WebcamLiveIcons } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
 import { attendanceService } from "@/services/attendance.service";
-import type { AttendanceItem } from "@/types/models";
+import { courseService } from "@/services/course.service";
+import { studentService } from "@/services/student.service";
+import { sessionService } from "@/services/session.service";
+import type { AttendanceItem, Session, Student } from "@/types/models";
 
 export default function AttendancePage() {
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -17,14 +20,39 @@ export default function AttendancePage() {
     const canManageAttendance = user.role === "teacher" && Boolean(user.token);
     const canViewAttendance = user.role === "teacher" || user.role === "student";
 
-    const [sessionId, setSessionId] = useState("1");
+    const [sessionId, setSessionId] = useState("");
     const [minSimilarity, setMinSimilarity] = useState(0.8);
-    const [studentId, setStudentId] = useState("");
+    const [studentCode, setStudentCode] = useState("");
     const [isCameraReady, setIsCameraReady] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
+    const [availableSessions, setAvailableSessions] = useState<Session[]>([]);
+    const [students, setStudents] = useState<Student[]>([]);
     const [events, setEvents] = useState<AttendanceItem[]>(() => attendanceService.getLocal().slice(0, 20));
     const [popupText, setPopupText] = useState<string | null>(null);
     const [isFocusMode, setIsFocusMode] = useState(false);
+
+    const selectedSession = availableSessions.find((item) => String(item.id) === sessionId);
+
+    const selectedStudent = students.find((item) => item.student_code?.trim().toLowerCase() === studentCode.trim().toLowerCase());
+
+    function formatSessionTime(item: Session): string {
+        const start = item.start_time || "--:--";
+        const end = item.end_time || "--:--";
+        return `${start} - ${end}`;
+    }
+
+    function formatSessionDate(value: string): string {
+        if (!value) {
+            return "N/A";
+        }
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return date.toLocaleDateString();
+    }
 
     useEffect(() => {
         let isMounted = true;
@@ -76,6 +104,47 @@ export default function AttendancePage() {
         });
     }, [isFocusMode]);
 
+    useEffect(() => {
+        async function loadSessions() {
+            try {
+                const courses = await courseService.getAll();
+                const courseIds = courses.map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id > 0);
+                if (courseIds.length === 0) {
+                    sessionService.clearCache();
+                    setAvailableSessions([]);
+                    setSessionId("");
+                    return;
+                }
+                const data = await sessionService.getAll(courseIds);
+                const items = data.slice().sort((a, b) => Number(b.id) - Number(a.id));
+                setAvailableSessions(items);
+                if (items.length > 0) {
+                    setSessionId(String(items[0].id));
+                } else {
+                    setSessionId("");
+                }
+            } catch {
+                setAvailableSessions([]);
+                setSessionId("");
+            }
+        }
+
+        void loadSessions();
+    }, []);
+
+    useEffect(() => {
+        async function loadStudents() {
+            try {
+                const data = await studentService.getAll();
+                setStudents(data);
+            } catch {
+                setStudents([]);
+            }
+        }
+
+        void loadStudents();
+    }, []);
+
     function refreshEvents() {
         const latest = attendanceService.getLocal().slice(0, 20);
         setEvents(latest);
@@ -86,15 +155,21 @@ export default function AttendancePage() {
             setPopupText("Teacher role is required to create check-in.");
             return;
         }
-        if (!sessionId.trim() || !studentId.trim()) {
-            setPopupText("Please enter session ID and student ID.");
+        if (!sessionId.trim() || !studentCode.trim()) {
+            setPopupText("Student code is only needed for manual check-in.");
+            return;
+        }
+
+        const resolvedStudentId = selectedStudent?.id;
+        if (!resolvedStudentId) {
+            setPopupText("Student code not found. Please select a valid code.");
             return;
         }
 
         try {
             await attendanceService.mark({
                 session_id: Number(sessionId),
-                student_id: Number(studentId),
+                student_id: Number(resolvedStudentId),
                 status: "present",
                 confidence_score: minSimilarity,
             });
@@ -166,7 +241,7 @@ export default function AttendancePage() {
                     {!isFocusMode ? (
                         <div className="rounded-2xl border border-slate-200 bg-slate-100 p-3 shadow-sm">
                             <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-800">
-                                <video ref={videoRef} className="h-[220px] w-full object-cover sm:h-[280px] lg:h-[320px]" autoPlay muted playsInline />
+                                <video ref={videoRef} className="h-[300px] w-full object-cover sm:h-[280px] lg:h-[320px]" autoPlay muted playsInline />
                                 {!isCameraReady && (
                                     <div className="absolute inset-0 grid place-items-center bg-slate-900/55 text-sm font-medium text-white">
                                         Waiting for camera permission...
@@ -188,17 +263,29 @@ export default function AttendancePage() {
                     <div className="grid gap-3">
                         <div className="motion-hero grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
                             <div>
-                                <label className="text-sm font-semibold text-slate-700" htmlFor="session-id">
-                                    Session ID
+                                <label className="text-sm font-semibold text-slate-700" htmlFor="session-preset">
+                                    Session
                                 </label>
                                 <div className="relative mt-1">
                                     <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                                    <input
-                                        id="session-id"
+                                    <select
+                                        id="session-preset"
                                         className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                         value={sessionId}
                                         onChange={(e) => setSessionId(e.target.value)}
-                                    />
+                                    >
+                                        <option value="">Select session</option>
+                                        {availableSessions.length === 0 ? (
+                                            <option value="">No saved sessions</option>
+                                        ) : (
+
+                                            availableSessions.map((item) => (
+                                                <option key={item.id} value={String(item.id)}>
+                                                    {item.session_name || "Session"} | {item.session_date || "No date"}
+                                                </option>
+                                            ))
+                                        )}
+                                    </select>
                                 </div>
                             </div>
 
@@ -222,16 +309,47 @@ export default function AttendancePage() {
                             </div>
 
                             <div>
-                                <label className="text-sm font-semibold text-slate-700" htmlFor="student-id">
-                                    Student ID (check-in)
+                                <label className="text-sm font-semibold text-slate-700" htmlFor="student-code">
+                                    Student Code (manual check-in)
                                 </label>
-                                <input
-                                    id="student-id"
+                                <select
+                                    id="student-code"
                                     className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                                    value={studentId}
-                                    onChange={(e) => setStudentId(e.target.value)}
-                                    placeholder="e.g. 1"
-                                />
+                                    value={studentCode}
+                                    onChange={(e) => setStudentCode(e.target.value)}
+                                >
+                                    <option value="">Select student code</option>
+                                    {students.map((item) => (
+                                        <option key={item.id} value={item.student_code ?? ""}>
+                                            {item.student_code ?? `Student #${item.id}`} - {item.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Realtime scan works without this field. Use it only for manual Create Check-in.
+                                </p>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Session info</p>
+                                {selectedSession ? (
+                                    <div className="mt-2 grid gap-1">
+                                        <p>
+                                            <span className="font-semibold text-slate-900">Name:</span> {selectedSession.session_name || "Session"}
+                                        </p>
+                                        <p>
+                                            <span className="font-semibold text-slate-900">Date:</span> {formatSessionDate(selectedSession.session_date)}
+                                        </p>
+                                        <p>
+                                            <span className="font-semibold text-slate-900">Time:</span> {formatSessionTime(selectedSession)}
+                                        </p>
+                                        <p>
+                                            <span className="font-semibold text-slate-900">Status:</span> {selectedSession.status || "scheduled"}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <p className="mt-2 text-slate-600">No session details available for this ID.</p>
+                                )}
                             </div>
                         </div>
 
@@ -259,10 +377,10 @@ export default function AttendancePage() {
                                 className="interactive-btn inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md"
                                 data-role={canManageAttendance ? "teacher" : user.role}
                                 onClick={createCheckIn}
-                                disabled={!canManageAttendance}
+                                disabled={!canManageAttendance || !studentCode.trim()}
                                 type="button"
                             >
-                                Create Check-in
+                                Create Check-in (Manual)
                             </button>
                         </div>
                     </div>
@@ -340,26 +458,43 @@ export default function AttendancePage() {
                             <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700" htmlFor="session-id-focus">
-                                        Session ID
+                                        Session
                                     </label>
-                                    <input
+                                    <select
                                         id="session-id-focus"
                                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                         value={sessionId}
                                         onChange={(e) => setSessionId(e.target.value)}
-                                    />
+                                    >
+                                        {availableSessions.length === 0 ? (
+                                            <option value="">No saved sessions</option>
+                                        ) : (
+                                            availableSessions.map((item) => (
+                                                <option key={item.id} value={String(item.id)}>
+                                                    {item.session_name || "Session"} | {item.session_date || "No date"}
+                                                </option>
+                                            ))
+                                        )}
+                                    </select>
                                 </div>
 
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700" htmlFor="student-id-focus">
-                                        Student ID
+                                        Student Code
                                     </label>
-                                    <input
+                                    <select
                                         id="student-id-focus"
                                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                                        value={studentId}
-                                        onChange={(e) => setStudentId(e.target.value)}
-                                    />
+                                        value={studentCode}
+                                        onChange={(e) => setStudentCode(e.target.value)}
+                                    >
+                                        <option value="">Select student code</option>
+                                        {students.map((item) => (
+                                            <option key={item.id} value={item.student_code ?? ""}>
+                                                {item.student_code ?? `Student #${item.id}`} - {item.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
 
                                 <button

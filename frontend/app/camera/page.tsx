@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Camera, CheckCircle2 } from "lucide-react";
+import { Camera, CheckCircle2, Activity, ShieldCheck, CircleDot } from "lucide-react";
 import { attendanceService } from "@/services/attendance.service";
+import { WebcamLiveIcons } from "@/components/icons";
 
 export default function CameraPage() {
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -91,12 +92,38 @@ export default function CameraPage() {
 
     return (
         <main className="motion-page space-y-4 px-1 py-1 sm:px-2">
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Recognition</p>
-                <h1 className="text-2xl font-bold text-slate-900">Camera Page</h1>
+            <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+                <header className="flex items-center gap-2 motion-hero rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-5 text-white shadow-lg sm:p-6">
+                    <div>
+                        <img src={WebcamLiveIcons} width={80} height={80} alt="" />
+                    </div>
+                    <div>
+                        <h1 className="mt-2 text-3xl font-bold sm:text-3xl">Camera Page</h1>
+                        <p className="mt-2 text-md text-slate-100 sm:text-base">Capture a live frame and submit an attendance check-in manually.</p>
+                    </div>
+                </header>
+
+                <div className="motion-stagger mt-4 grid gap-3 md:grid-cols-3">
+                    <article className="interactive-card rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+                        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700"><Activity className="h-4 w-4" /> Camera State</p>
+                        <p className="mt-2 text-sm font-bold text-blue-900">{isCameraReady ? "Ready" : "Waiting"}</p>
+                    </article>
+                    <article className="interactive-card rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
+                        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700"><CircleDot className="h-4 w-4" /> Session ID</p>
+                        <p className="mt-2 text-sm font-bold text-indigo-900">{sessionId || "-"}</p>
+                    </article>
+                    <article className="interactive-card rounded-2xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm">
+                        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700"><ShieldCheck className="h-4 w-4" /> Confidence</p>
+                        <p className="mt-2 text-sm font-bold text-cyan-900">{confidence.toFixed(2)}</p>
+                    </article>
+                </div>
+
+                <div className="mt-3">
+                    <p className="ml-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Camera Workspace</p>
+                </div>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr] lg:items-start">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-100 p-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-100 p-3 shadow-sm">
                         <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-800">
                             <video ref={videoRef} className="h-[280px] w-full object-cover lg:h-[420px]" autoPlay muted playsInline />
                             {!isCameraReady && (
@@ -108,7 +135,7 @@ export default function CameraPage() {
                         <canvas ref={canvasRef} className="hidden" />
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
                         <div className="grid gap-3">
                             <div>
                                 <label className="text-sm font-semibold text-slate-700" htmlFor="session-id">

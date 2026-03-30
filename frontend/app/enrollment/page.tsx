@@ -1,11 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ShieldAlert, UserRound, X } from "lucide-react";
 import { WebcamIcons } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
+import { classService } from "@/services/class.service";
 import { studentService } from "@/services/student.service";
+import type { ClassItem, Student } from "@/types/models";
 
 export default function EnrollmentPage() {
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -16,7 +18,9 @@ export default function EnrollmentPage() {
 
     const [studentCode, setStudentCode] = useState("");
     const [studentName, setStudentName] = useState("");
-    const [homeClassId, setHomeClassId] = useState("");
+    const [homeClassCode, setHomeClassCode] = useState("");
+    const [students, setStudents] = useState<Student[]>([]);
+    const [homeClasses, setHomeClasses] = useState<ClassItem[]>([]);
     const [isCameraReady, setIsCameraReady] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
@@ -58,6 +62,41 @@ export default function EnrollmentPage() {
     }, []);
 
     useEffect(() => {
+        async function loadStudents() {
+            try {
+                const data = await studentService.getAll();
+                setStudents(data);
+            } catch {
+                // Ignore list load failures; server-side validation still applies.
+            }
+        }
+
+        void loadStudents();
+
+        async function loadHomeClasses() {
+            try {
+                const classes = await classService.getAll();
+                setHomeClasses(classes);
+            } catch {
+                setHomeClasses([]);
+            }
+        }
+
+        void loadHomeClasses();
+    }, []);
+
+    const classCodeMap = useMemo(() => {
+        const map = new Map<string, number>();
+        homeClasses.forEach((item) => {
+            const code = item.class_code?.trim();
+            if (code) {
+                map.set(code.toLowerCase(), Number(item.id));
+            }
+        });
+        return map;
+    }, [homeClasses]);
+
+    useEffect(() => {
         if (!videoRef.current || !streamRef.current) {
             return;
         }
@@ -81,18 +120,32 @@ export default function EnrollmentPage() {
             return;
         }
 
+        const normalizedClassCode = homeClassCode.trim().toLowerCase();
+        const resolvedHomeClassId = normalizedClassCode ? classCodeMap.get(normalizedClassCode) : undefined;
+        if (normalizedClassCode && !resolvedHomeClassId) {
+            setNotice("Class code not found. Please select a valid class code.");
+            return;
+        }
+
+        const normalizedCode = studentCode.trim().toLowerCase();
+        const duplicatedCode = students.some((item) => item.student_code?.trim().toLowerCase() === normalizedCode);
+        if (duplicatedCode) {
+            setNotice("Student code already exists. Please use another code.");
+            return;
+        }
+
         try {
             setIsSubmitting(true);
             setNotice(null);
             await studentService.create({
                 student_code: studentCode,
                 name: studentName,
-                home_class_id: homeClassId.trim() ? Number(homeClassId) : undefined,
+                home_class_id: resolvedHomeClassId,
             });
             setNotice("Enrollment success.");
             setStudentCode("");
             setStudentName("");
-            setHomeClassId("");
+            setHomeClassCode("");
         } catch (err) {
             const message = err instanceof Error ? err.message : "Enrollment failed";
             setNotice(message);
@@ -170,17 +223,22 @@ export default function EnrollmentPage() {
                         </div>
 
                         <div>
-                            <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-id">
-                                Home Class ID
+                            <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-code">
+                                Class Code
                             </label>
-                            <input
-                                id="home-class-id"
+                            <select
+                                id="home-class-code"
                                 className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                                value={homeClassId}
-                                onChange={(e) => setHomeClassId(e.target.value)}
-                                placeholder="e.g. 1"
-                                autoComplete="off"
-                            />
+                                value={homeClassCode}
+                                onChange={(e) => setHomeClassCode(e.target.value)}
+                            >
+                                <option value="">No class</option>
+                                {homeClasses.map((item) => (
+                                    <option key={item.id} value={item.class_code ?? ""}>
+                                        {item.class_code ?? `Class #${item.id}`} - {item.major ?? "Major"}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="flex flex-wrap gap-3">
@@ -276,15 +334,22 @@ export default function EnrollmentPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-id-focus">
-                                        Home Class ID
+                                    <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-code-focus">
+                                        Class Code
                                     </label>
-                                    <input
-                                        id="home-class-id-focus"
+                                    <select
+                                        id="home-class-code-focus"
                                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                                        value={homeClassId}
-                                        onChange={(e) => setHomeClassId(e.target.value)}
-                                    />
+                                        value={homeClassCode}
+                                        onChange={(e) => setHomeClassCode(e.target.value)}
+                                    >
+                                        <option value="">No class</option>
+                                        {homeClasses.map((item) => (
+                                            <option key={item.id} value={item.class_code ?? ""}>
+                                                {item.class_code ?? `Class #${item.id}`} - {item.major ?? "Major"}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <button
                                     className="interactive-btn inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"

@@ -40,24 +40,31 @@ export type CreateStudentPayload = {
 
 export type ClassItem = {
   id: number;
-  course_code?: string;
-  course_name?: string;
-  teacher_id?: number;
-  semester?: string;
-  // Legacy aliases for older backend responses.
   class_code?: string;
-  name?: string;
-  lecturer?: string;
+  major?: string;
+  department?: string;
+  created_at?: string;
 };
 
 export type CreateClassPayload = {
+  class_code?: string;
+  major?: string;
+  department?: string;
+};
+
+export type CourseItem = {
+  id: number;
   course_code?: string;
   course_name?: string;
   teacher_id?: number;
   semester?: string;
-  class_code?: string;
-  name?: string;
-  lecturer?: string;
+  created_at?: string;
+};
+
+export type CreateCoursePayload = {
+  course_code: string;
+  course_name: string;
+  semester?: string;
 };
 
 export type Session = {

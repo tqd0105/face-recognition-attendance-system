@@ -53,17 +53,26 @@ const cards: DashboardCard[] = [
         icon: StudentIcons,
     },
     {
-        title: "Class Management",
-        description: "Browse classes and class details from backend data.",
+        title: "Home Class Management",
+        description: "Manage administrative home classes (class_code, major, department).",
         href: "/classes",
-        cta: "Manage Classes",
+        cta: "Manage Home Classes",
         badge: "Academic",
         iconType: "image",
         icon: ClassIcons,
     },
     {
+        title: "Course Class Management",
+        description: "Manage course classes used by sessions and realtime attendance.",
+        href: "/courses",
+        cta: "Manage Course Classes",
+        badge: "Teaching",
+        iconType: "image",
+        icon: SessionIcons,
+    },
+    {
         title: "Session Management",
-        description: "Create attendance sessions and keep local cache for quick access.",
+        description: "Create attendance sessions from course classes with DB-synced schedule.",
         href: "/sessions",
         cta: "Manage Sessions",
         badge: "Schedule",
@@ -110,7 +119,7 @@ export default function DashboardPage() {
                         </div>
                         <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">Face Recognition Attendance System</p>
-                            <h1 className="text-3xl font-bold sm:text-5xl">Overview Dashboard</h1>
+                            <h1 className="text-3xl font-bold sm:text-4xl">Overview Functions </h1>
                         </div>
                     </div>
 
@@ -169,14 +178,14 @@ export default function DashboardPage() {
                     ))}
                 </div>
 
-                <div className="mt-5 flex flex-wrap gap-3">
+                {/* <div className="mt-5 flex flex-wrap gap-3">
                     <Link href="/camera" className="interactive-btn inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">
                         <Video className="h-4 w-4" /> Open Camera Page
                     </Link>
                     <Link href="/attendance" className="interactive-btn inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">
                         <ClipboardList className="h-4 w-4" /> Open Realtime Page
                     </Link>
-                </div>
+                </div> */}
             </section>
         </main>
     );

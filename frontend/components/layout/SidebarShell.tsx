@@ -6,6 +6,7 @@ import {
     Camera,
     CalendarClock,
     ClipboardList,
+    BookOpen,
     LayoutDashboard,
     LogOut,
     School,
@@ -15,11 +16,12 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 
 const navItems = [
-    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/", label: "Overview", icon: LayoutDashboard },
     { href: "/enrollment", label: "Face Enrollment", icon: Camera },
     { href: "/attendance", label: "Realtime Attendance", icon: ClipboardList },
     { href: "/students", label: "Student Management", icon: Users },
-    { href: "/classes", label: "Class Management", icon: School },
+    { href: "/classes", label: "Home Class Management", icon: School },
+    { href: "/courses", label: "Course Class Management", icon: BookOpen },
     { href: "/sessions", label: "Session Management", icon: CalendarClock },
     { href: "/history", label: "Attendance History", icon: UserSquare2 },
     { href: "/camera", label: "Camera Page", icon: Camera },
@@ -32,8 +34,8 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="min-h-screen bg-slate-100">
-            <div className="mx-auto flex w-full max-w-[1440px] gap-4 px-4 py-4 sm:px-6 lg:px-8">
-                <aside className="hidden w-[270px] shrink-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:block">
+            <div className="mx-auto flex w-full max-w-[1440px] gap-4 px-4 py-8 sm:px-6 lg:px-8">
+                <aside className="hidden w-[270px] h-full shrink-0 rounded-3xl border border-slate-200 bg-white px-4 py-6 shadow-sm lg:block">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 text-center" >Attendance System use</p>
                     <h3 className="mt-0 text-xl font-bold text-slate-900 uppercase text-center">Face Recognition</h3>
 

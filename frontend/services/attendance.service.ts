@@ -46,7 +46,7 @@ export const attendanceService = {
   },
 
   async mark(payload: AttendancePayload): Promise<AttendanceItem> {
-    await http.post("/api/attendance", payload);
+    await http.post("/api/attendance/check-in", payload);
     const nextItem = toAttendanceItem(payload);
     const next = [nextItem, ...readAttendanceCache()].slice(0, 300);
     saveAttendanceCache(next);

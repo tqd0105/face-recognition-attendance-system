@@ -1,39 +1,31 @@
 import { http } from "@/services/http";
 import axios from "axios";
-import type { ClassItem, CreateClassPayload } from "@/types/models";
+import type { CourseItem, CreateCoursePayload } from "@/types/models";
 
-type HomeClassCreateResponse = {
+type CourseCreateResponse = {
   message?: string;
-  data?: ClassItem;
+  data?: CourseItem;
 };
 
-export const classService = {
-  async getAll(): Promise<ClassItem[]> {
-    const { data } = await http.get<ClassItem[]>("/api/classes");
+export const courseService = {
+  async getAll(): Promise<CourseItem[]> {
+    const { data } = await http.get<CourseItem[]>("/api/courses");
     return data;
   },
 
-  async create(payload: CreateClassPayload): Promise<ClassItem> {
+  async create(payload: CreateCoursePayload): Promise<CourseItem> {
     const normalizedPayload = {
-      class_code: payload.class_code?.trim() || undefined,
-      major: payload.major?.trim() || undefined,
-      department: payload.department?.trim() || undefined,
+      course_code: payload.course_code.trim(),
+      course_name: payload.course_name.trim(),
+      semester: payload.semester?.trim() || undefined,
     };
 
-    if (!normalizedPayload.class_code) {
-      throw new Error("Class code is required");
-    }
-
-    if (!normalizedPayload.major) {
-      throw new Error("Major is required");
-    }
-
     try {
-      const { data } = await http.post<HomeClassCreateResponse>("/api/classes", normalizedPayload);
+      const { data } = await http.post<CourseCreateResponse>("/api/courses", normalizedPayload);
       if (data?.data) {
         return data.data;
       }
-      throw new Error(data?.message || "Cannot create class");
+      throw new Error(data?.message || "Cannot create course");
     } catch (error) {
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
@@ -45,35 +37,23 @@ export const classService = {
         throw new Error(apiMessage);
       }
 
-      if (axiosError?.response?.status === 500) {
-        throw new Error("Server error while creating home class. Check duplicate class_code.");
-      }
-
-      throw new Error("Cannot create class");
+      throw new Error("Cannot create course");
     }
   },
 
-  async update(id: number, payload: CreateClassPayload): Promise<ClassItem> {
+  async update(id: number, payload: CreateCoursePayload): Promise<CourseItem> {
     const normalizedPayload = {
-      class_code: payload.class_code?.trim() || undefined,
-      major: payload.major?.trim() || undefined,
-      department: payload.department?.trim() || undefined,
+      course_code: payload.course_code.trim(),
+      course_name: payload.course_name.trim(),
+      semester: payload.semester?.trim() || undefined,
     };
 
-    if (!normalizedPayload.class_code) {
-      throw new Error("Class code is required");
-    }
-
-    if (!normalizedPayload.major) {
-      throw new Error("Major is required");
-    }
-
     try {
-      const { data } = await http.put<HomeClassCreateResponse>(`/api/classes/${id}`, normalizedPayload);
+      const { data } = await http.put<CourseCreateResponse>(`/api/courses/${id}`, normalizedPayload);
       if (data?.data) {
         return data.data;
       }
-      throw new Error(data?.message || "Cannot update class");
+      throw new Error(data?.message || "Cannot update course");
     } catch (error) {
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
@@ -85,13 +65,13 @@ export const classService = {
         throw new Error(apiMessage);
       }
       const status = axiosError?.response?.status;
-      throw new Error(status ? `Cannot update class (HTTP ${status})` : "Cannot update class");
+      throw new Error(status ? `Cannot update course (HTTP ${status})` : "Cannot update course");
     }
   },
 
   async remove(id: number): Promise<void> {
     try {
-      await http.delete(`/api/classes/${id}`);
+      await http.delete(`/api/courses/${id}`);
     } catch (error) {
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
@@ -103,7 +83,7 @@ export const classService = {
         throw new Error(apiMessage);
       }
       const status = axiosError?.response?.status;
-      throw new Error(status ? `Cannot delete class (HTTP ${status})` : "Cannot delete class");
+      throw new Error(status ? `Cannot delete course (HTTP ${status})` : "Cannot delete course");
     }
   },
 };
