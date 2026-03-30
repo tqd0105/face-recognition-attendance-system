@@ -3,7 +3,7 @@ CREATE SCHEMA public;
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE TYPE attendance_status AS ENUM ('present', 'absent', 'late');
+CREATE TYPE attendance_status AS ENUM ('present', 'absent', 'late', 'excused');
 
 CREATE TYPE session_status AS ENUM ('scheduled', 'active', 'completed', 'canceled');
 
