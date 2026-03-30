@@ -53,8 +53,8 @@ export function getAuthSession(): AuthSession {
   if (typeof window === "undefined") {
     return {
       token,
-      role: token ? "teacher" : "guest",
-      displayName: token ? "Teacher" : "Guest",
+      role: token ? "Teacher" : "Guest",
+      displayName: token ? "Teacher" : "Chưa xác thực",
     };
   }
 
