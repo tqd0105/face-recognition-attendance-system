@@ -75,3 +75,71 @@ exports.createCourseClass = async (req, res) => {
         res.status(500).json({ message: 'Lỗi server khi tạo Lớp học phần' });
     }
 };
+
+// @desc    Thêm danh sách sinh viên vào một lớp học phần
+// @route   POST /api/course-classes/:id/enroll
+// @access  Private
+exports.enrollStudents = async (req, res) => {
+    const {id} = req.params;
+    const {student_ids} = req.body;
+
+    if (!student_ids || !Array.isArray(student_ids) || student_ids.length === 0) {
+        return res.status(400).json({ message: 'Danh sách sinh viên (student_ids) không hợp lệ hoặc trống!' });
+    }
+
+    try {
+        const checkClass = await pool.query(
+            'SELECT * FROM Course_classes WHERE id = $1 AND teacher_id = $2',
+            [id, req.user.id]
+        );
+        if (checkClass.rows.length === 0) {
+            return res.status(403).json({ message: 'Lớp học phần không tồn tại hoặc bạn không có quyền thao tác!' });
+        }
+        const promises = student_ids.map(student_id => {
+            return pool.query(
+                `INSERT INTO Enrollments (student_id, course_class_id) 
+                 VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+                [student_id, id]
+            );
+        });
+        await Promise.all(promises);
+        res.status(200).json({
+            message: `Đã ghi danh thành công các sinh viên vào lớp học phần ID: ${id}`
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Lỗi server khi ghi danh sinh viên' });
+    }
+};
+
+// @desc    Lấy danh sách sinh viên đang học trong một lớp học phần cụ thể
+// @route   GET /api/course-classes/:id/students
+// @access  Private
+exports.getEnrolledStudents = async (req, res) => {
+    const {id} = req.params;
+    try {
+        const checkClass = await pool.query(
+            'SELECT * FROM Course_classes WHERE id = $1 AND teacher_id = $2',
+            [id, req.user.id]
+        );
+        if (checkClass.rows.length === 0) {
+            return res.status(403).json({ message: 'Lớp học phần không tồn tại hoặc bạn không có quyền truy cập!' });
+        }
+        const result = await pool.query(
+            `SELECT s.id, s.student_code, s.name, s.email, s.status, e.course_class_id 
+             FROM Student s
+             JOIN Enrollments e ON s.id = e.student_id
+             WHERE e.course_class_id = $1
+             ORDER BY s.student_code ASC`,
+            [id]
+        );
+
+        res.status(200).json({
+            message: 'Lấy danh sách sinh viên của lớp học phần thành công',
+            data: result.rows
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Lỗi server khi lấy danh sách sinh viên của lớp' });
+    }
+};
