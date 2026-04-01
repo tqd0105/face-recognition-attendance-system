@@ -1,7 +1,7 @@
 const pool = require('../config/db');
 
 // @desc    Lấy danh sách tất cả lớp sinh hoạt 
-// @route   GET /api/classes
+// @route   GET /api/home-classes
 // @access  Private (Chỉ Giảng viên đã đăng nhập mới được xem) (Có hỗ trợ phân trang và lọc)
 exports.getClass = async (req, res) => {
     try {
@@ -68,7 +68,7 @@ exports.getClass = async (req, res) => {
 };
 
 // @desc    Thêm lớp sinh hoạt mới
-// @route   POST /api/classes
+// @route   POST /api/home-classes
 // @access  Private
 exports.createClass = async (req, res) => {
     const {class_code, major, department} = req.body;

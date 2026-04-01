@@ -25,7 +25,7 @@ app.get('/', (req, res) => {
   res.send('Face Recognition Backend is running! 🚀');
 });
 
-app.use('/api/classes', classRoutes);
+app.use('/api/home-classes', classRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/course-classes', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
