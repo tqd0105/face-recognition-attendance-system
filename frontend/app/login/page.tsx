@@ -145,12 +145,12 @@ export default function LoginPage() {
                         </div>
                     )}
 
-                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+                    {/* <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
                         <p className="inline-flex items-center gap-2 font-semibold">
                             <AlertTriangle className="h-4 w-4" />
                             JWT token is saved in browser localStorage after successful login.
                         </p>
-                    </div>
+                    </div> */}
                 </div>
             </section>
         </main>
