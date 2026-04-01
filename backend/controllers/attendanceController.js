@@ -103,3 +103,63 @@ exports.updateAttendanceStatus = async (req, res) => {
         res.status(500).json({ message: 'Lỗi server khi cập nhật trạng thái' });
     }
 };
+
+// @desc    Lấy báo cáo chuyên cần và cảnh báo cấm thi của 1 lớp học (Course)
+// @route   GET /api/attendance/report/:course_class_id
+// @access  Private
+exports.getAttendanceReport = async (req, res) => {
+    const {course_class_id} = req.params;
+
+    try {
+        const reportQuery = `
+            WITH SessionCount AS (
+                -- Đếm tổng số buổi học đã diễn ra (status = completed hoặc active) của môn này
+                SELECT COUNT(id) AS total_sessions 
+                FROM Session 
+                WHERE course_class_id = $1 AND status != 'scheduled'
+            ),
+            StudentAbsences AS (
+                -- Đếm số buổi vắng của từng sinh viên
+                SELECT a.student_id, COUNT(a.id) AS absent_count
+                FROM Attendance a
+                JOIN Session s ON a.session_id = s.id
+                WHERE s.course_class_id = $1 AND a.status = 'absent'
+                GROUP BY a.student_id
+            )
+            SELECT
+                st.id AS student_id,
+                st.student_code,
+                st.name,
+                COALESCE(sc.total_sessions, 0) AS total_sessions,
+                COALESCE(sa.absent_count, 0) AS absent_count,
+                -- Tính phần trăm vắng mặt
+                CASE
+                    WHEN COALESCE(sc.total_sessions, 0) = 0 THEN 0
+                    ELSE ROUND((COALESCE(sa.absent_count, 0)::decimal / sc.total_sessions) * 100, 2)
+                END AS absence_percentage
+            FROM Enrollments e
+            JOIN Student st ON e.student_id = st.id
+            CROSS JOIN SessionCount sc
+            LEFT JOIN StudentAbsences sa ON st.id = sa.student_id
+            WHERE e.course_class_id = $1;
+        `;
+
+        const result =  await pool.query(reportQuery, [course_class_id]);
+
+        const reportData = result.rows.map(row => {
+            const isBanned = parseFloat(row.absence_percentage) > 20.00;
+            return {
+                ...row,
+                status: isBanned ? 'Banned' : 'Good'
+            };
+        });
+
+        res.status(200).json({
+            message: 'Lấy báo cáo chuyên cần thành công',
+            data: reportData
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Lỗi server khi lập báo cáo' });
+    }
+}
