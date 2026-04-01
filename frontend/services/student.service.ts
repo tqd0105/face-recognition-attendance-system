@@ -11,6 +11,18 @@ type StudentCreateResponse = {
   data?: StudentApiResponse;
 };
 
+type StudentListResponse = {
+  message?: string;
+  data?: StudentApiResponse[];
+};
+
+function normalizeStudentList(payload: StudentApiResponse[] | StudentListResponse): StudentApiResponse[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  return Array.isArray(payload?.data) ? payload.data : [];
+}
+
 function extractApiMessage(error: unknown): string | null {
   const axiosError = axios.isAxiosError(error) ? error : null;
   return (
@@ -36,8 +48,8 @@ function normalizeStudent(data: StudentApiResponse): Student {
 
 export const studentService = {
   async getAll(): Promise<Student[]> {
-    const { data } = await http.get<StudentApiResponse[]>("/api/students");
-    return data.map(normalizeStudent);
+    const { data } = await http.get<StudentApiResponse[] | StudentListResponse>("/api/students");
+    return normalizeStudentList(data).map(normalizeStudent);
   },
 
   async create(payload: CreateStudentPayload): Promise<Student> {

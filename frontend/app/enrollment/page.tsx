@@ -128,21 +128,34 @@ export default function EnrollmentPage() {
         }
 
         const normalizedCode = studentCode.trim().toLowerCase();
-        const duplicatedCode = students.some((item) => item.student_code?.trim().toLowerCase() === normalizedCode);
-        if (duplicatedCode) {
-            setNotice("Student code already exists. Please use another code.");
-            return;
-        }
+        const normalizedName = studentName.trim();
+        const matchedStudent = students.find((item) => item.student_code?.trim().toLowerCase() === normalizedCode);
 
         try {
             setIsSubmitting(true);
             setNotice(null);
-            await studentService.create({
-                student_code: studentCode,
-                name: studentName,
-                home_class_id: resolvedHomeClassId,
-            });
-            setNotice("Enrollment success.");
+            if (matchedStudent) {
+                await studentService.update(matchedStudent.id, {
+                    student_code: studentCode.trim(),
+                    name: normalizedName,
+                    home_class_id: resolvedHomeClassId,
+                });
+                setNotice("Student already exists. Updated information and continued enrollment.");
+            } else {
+                await studentService.create({
+                    student_code: studentCode.trim(),
+                    name: normalizedName,
+                    home_class_id: resolvedHomeClassId,
+                });
+                setNotice("Enrollment success.");
+            }
+
+            try {
+                const data = await studentService.getAll();
+                setStudents(data);
+            } catch {
+                // Ignore refresh failures; user-facing operation already succeeded.
+            }
             setStudentCode("");
             setStudentName("");
             setHomeClassCode("");

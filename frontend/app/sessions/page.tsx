@@ -10,6 +10,9 @@ import type { CourseItem, Session } from "@/types/models";
 import { SessionIcons } from "@/components/icons";
 
 export default function SessionsPage() {
+    const canUpdateSession = false;
+    const canDeleteSession = false;
+
     const [sessions, setSessions] = useState<Session[]>([]);
     const [courses, setCourses] = useState<CourseItem[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -105,11 +108,12 @@ export default function SessionsPage() {
                 session_name: `${sessionDate} ${startTime}-${endTime}`,
                 start_time: startTime,
                 end_time: endTime,
-                status,
+                status: "scheduled" as const,
             };
 
             if (editingSessionId) {
-                await sessionService.update(editingSessionId, payload);
+                setModalError("Current backend does not support updating sessions yet.");
+                return;
             } else {
                 await sessionService.create(payload);
             }
@@ -149,6 +153,11 @@ export default function SessionsPage() {
     }
 
     function onEditSession(item: Session) {
+        if (!canUpdateSession) {
+            setError("Current backend does not support editing sessions yet.");
+            return;
+        }
+
         setModalError(null);
         setEditingSessionId(item.id);
         setSelectedCourseClassId(String(item.course_class_id ?? item.class_id ?? ""));
@@ -160,6 +169,11 @@ export default function SessionsPage() {
     }
 
     async function onDeleteSession(item: Session) {
+        if (!canDeleteSession) {
+            setError("Current backend does not support deleting sessions yet.");
+            return;
+        }
+
         const accepted = window.confirm(`Delete session #${item.id}?`);
         if (!accepted) {
             return;
@@ -278,6 +292,12 @@ export default function SessionsPage() {
                     </div>
                 )}
 
+                {!error && (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                        Current backend supports listing and creating sessions. Edit/Delete/Start/Stop actions are not available yet.
+                    </div>
+                )}
+
                 {/* {!error && hasCourseOptions && (
                     <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
                         Sessions can only be created from Course Class Management, not Home Class Management.
@@ -374,14 +394,12 @@ export default function SessionsPage() {
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             value={status}
                             onChange={(e) => setStatus(e.target.value as "scheduled" | "active" | "completed" | "canceled")}
+                            disabled
                         >
                             <option value="scheduled">scheduled</option>
-                            <option value="active">active</option>
-                            <option value="completed">completed</option>
-                            <option value="canceled">canceled</option>
                         </select>
                     </div>
-                    <p className="text-xs text-slate-500">Session table constraint: start_time must be earlier than end_time.</p>
+                    {/* <p className="text-xs text-slate-500">Session table constraint: start_time must be earlier than end_time.</p> */}
                     <button
                         type="submit"
                         className="interactive-btn inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"

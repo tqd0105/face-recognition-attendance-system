@@ -7,10 +7,27 @@ type CourseCreateResponse = {
   data?: CourseItem;
 };
 
+type CourseListResponse = {
+  message?: string;
+  data?: CourseItem[];
+};
+
+function normalizeCourseList(payload: CourseItem[] | CourseListResponse): CourseItem[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  return Array.isArray(payload?.data) ? payload.data : [];
+}
+
 export const courseService = {
   async getAll(): Promise<CourseItem[]> {
-    const { data } = await http.get<CourseItem[]>("/api/courses");
-    return data;
+    try {
+      const { data } = await http.get<CourseItem[] | CourseListResponse>("/api/courses");
+      return normalizeCourseList(data);
+    } catch {
+      const { data } = await http.get<CourseItem[] | CourseListResponse>("/api/course-classes");
+      return normalizeCourseList(data);
+    }
   },
 
   async create(payload: CreateCoursePayload): Promise<CourseItem> {
@@ -27,6 +44,14 @@ export const courseService = {
       }
       throw new Error(data?.message || "Cannot create course");
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        const { data } = await http.post<CourseCreateResponse>("/api/course-classes", normalizedPayload);
+        if (data?.data) {
+          return data.data;
+        }
+        throw new Error(data?.message || "Cannot create course");
+      }
+
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
         (axiosError?.response?.data as { message?: string; error?: string; detail?: string } | undefined)?.message ||

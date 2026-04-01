@@ -7,10 +7,27 @@ type HomeClassCreateResponse = {
   data?: ClassItem;
 };
 
+type HomeClassListResponse = {
+  message?: string;
+  data?: ClassItem[];
+};
+
+function normalizeClassList(payload: ClassItem[] | HomeClassListResponse): ClassItem[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  return Array.isArray(payload?.data) ? payload.data : [];
+}
+
 export const classService = {
   async getAll(): Promise<ClassItem[]> {
-    const { data } = await http.get<ClassItem[]>("/api/classes");
-    return data;
+    try {
+      const { data } = await http.get<ClassItem[] | HomeClassListResponse>("/api/classes");
+      return normalizeClassList(data);
+    } catch {
+      const { data } = await http.get<ClassItem[] | HomeClassListResponse>("/api/home-classes");
+      return normalizeClassList(data);
+    }
   },
 
   async create(payload: CreateClassPayload): Promise<ClassItem> {
@@ -35,6 +52,14 @@ export const classService = {
       }
       throw new Error(data?.message || "Cannot create class");
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        const { data } = await http.post<HomeClassCreateResponse>("/api/home-classes", normalizedPayload);
+        if (data?.data) {
+          return data.data;
+        }
+        throw new Error(data?.message || "Cannot create class");
+      }
+
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
         (axiosError?.response?.data as { message?: string; error?: string; detail?: string } | undefined)?.message ||

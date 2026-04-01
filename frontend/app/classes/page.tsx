@@ -10,6 +10,9 @@ import type { ClassItem, CreateClassPayload } from "@/types/models";
 import { ClassIcons } from "@/components/icons";
 
 export default function ClassesPage() {
+    const canUpdateClass = false;
+    const canDeleteClass = false;
+
     const [classes, setClasses] = useState<ClassItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -65,7 +68,8 @@ export default function ClassesPage() {
             setIsCreating(true);
             setModalError(null);
             if (editingClassId) {
-                await classService.update(editingClassId, form);
+                setModalError("Current backend does not support updating home classes yet.");
+                return;
             } else {
                 await classService.create(form);
             }
@@ -82,6 +86,11 @@ export default function ClassesPage() {
     }
 
     async function onDeleteClass(item: ClassItem) {
+        if (!canDeleteClass) {
+            setError("Current backend does not support deleting home classes yet.");
+            return;
+        }
+
         const accepted = window.confirm(`Delete home class ${item.class_code ?? item.id}?`);
         if (!accepted) {
             return;
@@ -97,6 +106,11 @@ export default function ClassesPage() {
     }
 
     function onEditClass(item: ClassItem) {
+        if (!canUpdateClass) {
+            setError("Current backend does not support editing home classes yet.");
+            return;
+        }
+
         setModalError(null);
         setEditingClassId(item.id);
         setForm({
@@ -186,6 +200,10 @@ export default function ClassesPage() {
                     >
                         <Plus className="h-4 w-4" /> Add Home Class
                     </button>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                    Current backend supports listing and creating home classes. Edit/Delete will be enabled after backend update APIs are added.
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">

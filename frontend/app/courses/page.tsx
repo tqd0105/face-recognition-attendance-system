@@ -10,6 +10,9 @@ import { courseService } from "@/services/course.service";
 import type { CourseItem, CreateCoursePayload } from "@/types/models";
 
 export default function CoursesPage() {
+    const canUpdateCourse = false;
+    const canDeleteCourse = false;
+
     const [courses, setCourses] = useState<CourseItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -62,7 +65,8 @@ export default function CoursesPage() {
         try {
             setIsCreating(true);
             if (editingCourseId) {
-                await courseService.update(editingCourseId, form);
+                setModalError("Current backend does not support updating course classes yet.");
+                return;
             } else {
                 await courseService.create(form);
             }
@@ -79,6 +83,11 @@ export default function CoursesPage() {
     }
 
     async function onDeleteCourse(item: CourseItem) {
+        if (!canDeleteCourse) {
+            setError("Current backend does not support deleting course classes yet.");
+            return;
+        }
+
         const accepted = window.confirm(`Delete course class ${item.course_code ?? item.id}?`);
         if (!accepted) {
             return;
@@ -94,6 +103,11 @@ export default function CoursesPage() {
     }
 
     function onEditCourse(item: CourseItem) {
+        if (!canUpdateCourse) {
+            setError("Current backend does not support editing course classes yet.");
+            return;
+        }
+
         setModalError(null);
         setEditingCourseId(item.id);
         setForm({
@@ -185,6 +199,10 @@ export default function CoursesPage() {
                         <Plus className="h-4 w-4" /> Add Course Class
                     </button>
                 </div>
+
+                {/* <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                    Current backend supports listing and creating course classes. Edit/Delete will be enabled after backend update APIs are added.
+                </div> */}
 
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                     {isLoading && <LoadingState label="Loading course class table..." />}
