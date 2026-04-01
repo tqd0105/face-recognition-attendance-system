@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const {getCourses, createCourse} = require('../controllers/courseController');
+const {getCourseClasses, getCourseClassById, createCourseClass} = require('../controllers/courseController');
 const {protect} = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
 router.route('/')
-    .get(getCourses)
-    .post(createCourse);
+    .get(getCourseClasses)
+    .post(createCourseClass);
+
+router.route('/:id')
+    .get(getCourseClassById);
 
 module.exports = router;
