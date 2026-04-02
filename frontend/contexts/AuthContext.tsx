@@ -16,7 +16,7 @@ type AuthContextValue = {
 const guestUser: AuthUser = {
     token: "",
     role: "Guest",
-    displayName: "Chưa xác thực",
+    displayName: "Unauthenticated",
 };
 
 export const AuthContext = createContext<AuthContextValue>({

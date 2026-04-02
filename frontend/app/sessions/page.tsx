@@ -251,7 +251,7 @@ export default function SessionsPage() {
                                 type="button"
                                 className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
                                 onClick={() => onStartSession(row)}
-                                disabled={row.status === "completed" || row.status === "canceled"}
+                                disabled={row.status === "canceled"}
                             >
                                 Start
                             </button>

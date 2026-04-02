@@ -54,7 +54,7 @@ export function getAuthSession(): AuthSession {
     return {
       token,
       role: token ? "Teacher" : "Guest",
-      displayName: token ? "Teacher" : "Chưa xác thực",
+      displayName: token ? "Teacher" : "Unauthenticated",
     };
   }
 

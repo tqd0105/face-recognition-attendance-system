@@ -475,9 +475,9 @@ export default function EnrollmentPage() {
                     </div>
                 )}
 
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+                {/* <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
                     Enrollment uses current camera frame and uploads directly to biometrics API.
-                </div>
+                </div> */}
             </section>
 
             {isFocusMode && (
