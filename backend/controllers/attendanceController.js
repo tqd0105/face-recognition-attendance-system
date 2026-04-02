@@ -163,3 +163,98 @@ exports.getAttendanceReport = async (req, res) => {
         res.status(500).json({ message: 'Lỗi server khi lập báo cáo' });
     }
 }
+
+// @desc    Xem lịch sử điểm danh của 1 sinh viên (Phục vụ xuất cảnh báo cấm thi)
+// @route   GET /api/attendance/student/:student_id
+// @access  Private
+exports.getStudentAttendanceHistory =  async (req, res) => {
+    const {student_id} = req.params;
+    const {course_class_id} = req.query;
+
+    try {
+        let query = `
+            SELECT a.id AS attendance_id, a.status, a.check_in_time, 
+                   s.session_date, s.start_time, s.end_time,
+                   c.course_name, c.course_code
+            FROM Attendance a
+            JOIN Session s ON a.session_id = s.id
+            JOIN Course_classes c ON s.course_class_id = c.id
+            WHERE a.student_id = $1
+        `;
+        let values = [student_id];
+
+        if (course_class_id) {
+            query += ` AND s.course_class_id = $2`;
+            values.push(course_class_id);
+        }
+
+        query += ` ORDER BY s.session_date DESC, s.start_time DESC`;
+
+        const result = await pool.query(query, values);
+        
+        res.status(200).json({
+            message: 'Lấy lịch sử điểm danh thành công',
+            data: result.rows
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Lỗi server khi lấy lịch sử điểm danh' });
+    }
+};
+
+// @desc    Giảng viên điểm danh thủ công (Dùng khi AI không nhận diện được)
+// @route   POST /api/attendance/manual
+// @access  Private
+exports.manualCheckIn = async (req, res) => {
+    const { session_id, student_id, status } = req.body;
+
+    try {
+        const result = await pool.query(
+            `INSERT INTO Attendance (session_id, student_id, status) 
+             VALUES ($1, $2, $3) 
+             ON CONFLICT (session_id, student_id) 
+             DO UPDATE SET 
+                 status = EXCLUDED.status,
+                 check_in_time = CURRENT_TIMESTAMP
+             RETURNING *`,
+            [session_id, student_id, status]
+        );
+        res.status(200).json({
+            message: 'Điểm danh thủ công thành công!',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Lỗi server khi điểm danh thủ công' });
+    }
+};
+
+// @desc    Sửa trạng thái điểm danh (Dựa trên ID của bản ghi Attendance)
+// @route   PUT /api/attendance/:id
+// @access  Private
+exports.updateAttendanceById = async (req, res) => {
+    const {id} = req.params;
+    const {status} = req.body;
+
+    try {
+        const result = await pool.query(
+            `UPDATE Attendance 
+             SET status = $1 
+             WHERE id = $2 
+             RETURNING *`,
+            [status, id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy bản ghi điểm danh này!' });
+        }
+
+        res.status(200).json({ 
+            message: 'Cập nhật trạng thái thành công!', 
+            data: result.rows[0] 
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Lỗi server khi cập nhật trạng thái' });
+    }
+};
