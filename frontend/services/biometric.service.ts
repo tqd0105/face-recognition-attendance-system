@@ -31,10 +31,11 @@ function extractApiMessage(error: unknown): string | null {
 }
 
 export const biometricService = {
-  async checkEnrollment(studentId: number): Promise<{ hasFaceData: boolean }> {
+  async checkEnrollment(studentId: number): Promise<{ hasFaceData: boolean; createdAt?: string }> {
     const { data } = await http.get<BiometricCheckResponse>(`/api/biometrics/student/${studentId}`);
     return {
       hasFaceData: Boolean(data?.has_face_data ?? data?.has_biometrics),
+      createdAt: data?.data?.created_at,
     };
   },
 

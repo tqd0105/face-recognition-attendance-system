@@ -29,6 +29,7 @@ export default function EnrollmentPage() {
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [isCheckingFaceStatus, setIsCheckingFaceStatus] = useState(false);
     const [hasFaceEnrolled, setHasFaceEnrolled] = useState<boolean | null>(null);
+    const [faceEnrolledAt, setFaceEnrolledAt] = useState<string | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -125,6 +126,7 @@ export default function EnrollmentPage() {
             setStudentName("");
             setHomeClassCode("");
             setHasFaceEnrolled(null);
+            setFaceEnrolledAt(null);
             return;
         }
 
@@ -148,12 +150,14 @@ export default function EnrollmentPage() {
         async function checkFaceStatus() {
             if (!selectedStudentId) {
                 setHasFaceEnrolled(null);
+                setFaceEnrolledAt(null);
                 return;
             }
 
             const studentId = Number(selectedStudentId);
             if (!Number.isFinite(studentId) || studentId <= 0) {
                 setHasFaceEnrolled(null);
+                setFaceEnrolledAt(null);
                 return;
             }
 
@@ -161,8 +165,10 @@ export default function EnrollmentPage() {
                 setIsCheckingFaceStatus(true);
                 const result = await biometricService.checkEnrollment(studentId);
                 setHasFaceEnrolled(result.hasFaceData);
+                setFaceEnrolledAt(result.createdAt ?? null);
             } catch {
                 setHasFaceEnrolled(null);
+                setFaceEnrolledAt(null);
             } finally {
                 setIsCheckingFaceStatus(false);
             }
@@ -267,6 +273,7 @@ export default function EnrollmentPage() {
                 await biometricService.enroll(matchedStudent.id, imageBlob, `${fileBase}-${Date.now()}.jpg`);
 
                 setHasFaceEnrolled(true);
+                setFaceEnrolledAt(new Date().toISOString());
                 setNotice("Face enrollment successful.");
             } else {
                 setNotice("Selected student was not found. Please reload and try again.");
@@ -381,6 +388,14 @@ export default function EnrollmentPage() {
                                     </span>
                                 )}
                             </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                                Status is read from biometrics API, not from form fields.
+                            </p>
+                            {hasFaceEnrolled && faceEnrolledAt && (
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Last enrolled: {new Date(faceEnrolledAt).toLocaleString()}
+                                </p>
+                            )}
                         </div>
 
                         <div>
@@ -527,6 +542,14 @@ export default function EnrollmentPage() {
                                             </span>
                                         )}
                                     </div>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        Status is read from biometrics API, not from form fields.
+                                    </p>
+                                    {hasFaceEnrolled && faceEnrolledAt && (
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            Last enrolled: {new Date(faceEnrolledAt).toLocaleString()}
+                                        </p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-code-focus">
