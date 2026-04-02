@@ -15,13 +15,13 @@ exports.checkEnrollment = async (req, res) => {
         )
 
         res.status(200).json({
-            message: 'Kiểm tra trạng thái sinh trắc học',
+            message: 'Biometric enrollment status checked',
             has_face_data: result.rows.length > 0,
             data: result.rows[0] || null
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi kiểm tra khuôn mặt' });
+        res.status(500).json({ message: 'Server error while checking face enrollment' });
     }
 };
 
@@ -32,7 +32,7 @@ exports.enrollFace = async (req, res) => {
     const { student_id } = req.body;
 
     if (!req.file || !student_id) {
-        return res.status(400).json({ message: 'Vui lòng cung cấp đủ student_id và file ảnh!' });
+        return res.status(400).json({ message: 'Please provide both student_id and image file!' });
     }
 
     try {
@@ -60,36 +60,36 @@ exports.enrollFace = async (req, res) => {
                 aiError?.response?.data?.message ||
                 aiError?.response?.data?.error ||
                 aiError?.message ||
-                'Không thể gọi AI Service';
+                'Unable to call AI Service';
 
-            console.error('Lỗi AI Service:', fallbackMessage);
+            console.error('AI Service error:', fallbackMessage);
 
             if (statusCode === 401) {
-                return res.status(503).json({ message: 'AI Service token không hợp lệ. Kiểm tra AI_SERVICE_TOKEN!' });
+                return res.status(503).json({ message: 'Invalid AI Service token. Please verify AI_SERVICE_TOKEN!' });
             }
 
             if (statusCode && statusCode >= 400 && statusCode < 500) {
                 if (detailCode === 'NO_FACE_DETECTED') {
-                    return res.status(422).json({ message: 'Không phát hiện khuôn mặt. Hãy nhìn thẳng camera, đủ sáng và không che mặt.' });
+                    return res.status(422).json({ message: 'No face detected. Please face the camera, improve lighting, and avoid covering your face.' });
                 }
 
                 if (detailCode === 'MULTIPLE_FACES') {
-                    return res.status(422).json({ message: 'Phát hiện nhiều khuôn mặt. Vui lòng chỉ để một người trong khung hình.' });
+                    return res.status(422).json({ message: 'Multiple faces detected. Please keep only one person in the frame.' });
                 }
 
                 if (detailCode === 'INVALID_IMAGE') {
-                    return res.status(422).json({ message: 'Ảnh không hợp lệ. Hãy thử chụp lại khung hình rõ hơn.' });
+                    return res.status(422).json({ message: 'Invalid image. Please capture a clearer frame and try again.' });
                 }
 
                 return res.status(422).json({ message: detailMessage || fallbackMessage });
             }
 
-            return res.status(503).json({ message: 'AI Service (Python) đang không phản hồi hoặc chưa bật!' });
+            return res.status(503).json({ message: 'AI Service (Python) is unavailable or not running!' });
         }
 
         const embeddingVector = aiResponse?.data?.embedding;
         if (!Array.isArray(embeddingVector) || embeddingVector.length === 0) {
-            return res.status(422).json({ message: 'AI Service trả về embedding không hợp lệ' });
+            return res.status(422).json({ message: 'AI Service returned an invalid embedding vector' });
         }
 
         const vectorString = `[${embeddingVector.join(',')}]`;
@@ -97,7 +97,7 @@ exports.enrollFace = async (req, res) => {
         const minQuality = Number(process.env.BIOMETRIC_MIN_QUALITY || 0.75);
         if (Number.isFinite(qualityScore) && qualityScore < minQuality) {
             return res.status(422).json({
-                message: `Chất lượng khuôn mặt thấp (${qualityScore.toFixed(2)}). Vui lòng bỏ che mặt, nhìn thẳng camera và tăng ánh sáng.`,
+                message: `Low face quality (${qualityScore.toFixed(2)}). Please remove occlusions, look straight at the camera, and improve lighting.`,
             });
         }
 
@@ -127,11 +127,11 @@ exports.enrollFace = async (req, res) => {
         }
 
         res.status(200).json({
-            message: 'Đăng ký khuôn mặt thành công!',
+            message: 'Face enrollment completed successfully!',
             data: result.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi đăng ký khuôn mặt' });
+        res.status(500).json({ message: 'Server error while enrolling face data' });
     }
 };

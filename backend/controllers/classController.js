@@ -51,7 +51,7 @@ exports.getClass = async (req, res) => {
         const totalPages = Math.ceil(totalItems / limitNum);
 
         res.status(200).json({
-            message: 'Lấy danh sách Lớp sinh hoạt thành công',
+            message: 'Fetched home classes successfully',
             data: dataResult.rows,
             pagination: {
                 total_items: totalItems,
@@ -63,7 +63,7 @@ exports.getClass = async (req, res) => {
 
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi lấy danh sách lớp sinh hoạt' });
+        res.status(500).json({ message: 'Server error while fetching home classes' });
     }
 };
 
@@ -77,7 +77,7 @@ exports.createClass = async (req, res) => {
         // 1. Kiểm tra xem mã lớp đã bị trùng
         const checkExist = await pool.query('SELECT * FROM Home_class WHERE class_code = $1', [class_code]);
         if (checkExist.rows.length > 0) {
-            return res.status(400).json({ message: 'Mã lớp này đã tồn tại trong hệ thống!' });
+            return res.status(400).json({ message: 'This class code already exists in the system!' });
         }
 
         // 2. Thêm lớp mới vào DB
@@ -87,12 +87,12 @@ exports.createClass = async (req, res) => {
         );
 
         res.status(201).json({
-            message: 'Thêm lớp sinh hoạt thành công',
+            message: 'Home class created successfully',
             data: newClass.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi tạo lớp mới' });
+        res.status(500).json({ message: 'Server error while creating home class' });
     }
 };
 
@@ -110,7 +110,7 @@ exports.updateClass = async (req, res) => {
         );
 
         if (checkExist.rows.length > 0) {
-            return res.status(400).json({ message: 'Mã lớp này đã tồn tại trong hệ thống!' });
+            return res.status(400).json({ message: 'This class code already exists in the system!' });
         }
 
         const updated = await pool.query(
@@ -122,16 +122,16 @@ exports.updateClass = async (req, res) => {
         );
 
         if (updated.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy lớp sinh hoạt để cập nhật!' });
+            return res.status(404).json({ message: 'Home class not found for update!' });
         }
 
         return res.status(200).json({
-            message: 'Cập nhật lớp sinh hoạt thành công!',
+            message: 'Home class updated successfully!',
             data: updated.rows[0],
         });
     } catch (error) {
         console.error(error.message);
-        return res.status(500).json({ message: 'Lỗi server khi cập nhật lớp sinh hoạt' });
+        return res.status(500).json({ message: 'Server error while updating home class' });
     }
 };
 
@@ -148,15 +148,15 @@ exports.deleteClass = async (req, res) => {
         );
 
         if (deleted.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy lớp sinh hoạt để xóa!' });
+            return res.status(404).json({ message: 'Home class not found for delete!' });
         }
 
         return res.status(200).json({
-            message: 'Xóa lớp sinh hoạt thành công!',
+            message: 'Home class deleted successfully!',
             data: deleted.rows[0],
         });
     } catch (error) {
         console.error(error.message);
-        return res.status(500).json({ message: 'Lỗi server khi xóa lớp sinh hoạt' });
+        return res.status(500).json({ message: 'Server error while deleting home class' });
     }
 };

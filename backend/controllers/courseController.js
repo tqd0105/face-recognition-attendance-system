@@ -10,12 +10,12 @@ exports.getCourseClasses = async (req, res) => {
             [req.user.id]
         );
         res.status(200).json({
-            message: 'Lấy danh sách Lớp học phần thành công',
+            message: 'Fetched course classes successfully',
             data: result.rows
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi lấy danh sách Lớp học phần' });
+        res.status(500).json({ message: 'Server error while fetching course classes' });
     }
 };
 
@@ -32,16 +32,16 @@ exports.getCourseClassById = async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy lớp học phần hoặc bạn không có quyền truy cập!' });
+            return res.status(404).json({ message: 'Course class not found or access denied!' });
         }
 
         res.status(200).json({
-            message: 'Lấy chi tiết Lớp học phần thành công',
+            message: 'Fetched course class detail successfully',
             data: result.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi xem chi tiết Lớp học phần' });
+        res.status(500).json({ message: 'Server error while fetching course class detail' });
     }
 };
 
@@ -57,7 +57,7 @@ exports.createCourseClass = async (req, res) => {
             [course_code]
         );
         if (checkExist.rows.length > 0) {
-            return res.status(400).json({ message: 'Mã lớp học phần này đã tồn tại trong hệ thống!' });
+            return res.status(400).json({ message: 'This course class code already exists in the system!' });
         }
 
         const newCourse = await pool.query(
@@ -67,12 +67,12 @@ exports.createCourseClass = async (req, res) => {
         )
 
         res.status(201).json({
-            message: 'Tạo Lớp học phần thành công!',
+            message: 'Course class created successfully!',
             data: newCourse.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi tạo Lớp học phần' });
+        res.status(500).json({ message: 'Server error while creating course class' });
     }
 };
 
@@ -89,7 +89,7 @@ exports.updateCourseClass = async (req, res) => {
             [id, req.user.id]
         );
         if (ownership.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy lớp học phần hoặc bạn không có quyền cập nhật!' });
+            return res.status(404).json({ message: 'Course class not found or no update permission!' });
         }
 
         const duplicatedCode = await pool.query(
@@ -97,7 +97,7 @@ exports.updateCourseClass = async (req, res) => {
             [course_code, id]
         );
         if (duplicatedCode.rows.length > 0) {
-            return res.status(400).json({ message: 'Mã lớp học phần này đã tồn tại trong hệ thống!' });
+            return res.status(400).json({ message: 'This course class code already exists in the system!' });
         }
 
         const updated = await pool.query(
@@ -109,12 +109,12 @@ exports.updateCourseClass = async (req, res) => {
         );
 
         return res.status(200).json({
-            message: 'Cập nhật lớp học phần thành công!',
+            message: 'Course class updated successfully!',
             data: updated.rows[0],
         });
     } catch (error) {
         console.error(error.message);
-        return res.status(500).json({ message: 'Lỗi server khi cập nhật lớp học phần' });
+        return res.status(500).json({ message: 'Server error while updating course class' });
     }
 };
 
@@ -126,7 +126,7 @@ exports.enrollStudents = async (req, res) => {
     const { student_ids } = req.body;
 
     if (!student_ids || !Array.isArray(student_ids) || student_ids.length === 0) {
-        return res.status(400).json({ message: 'Danh sách sinh viên (student_ids) không hợp lệ hoặc trống!' });
+        return res.status(400).json({ message: 'student_ids is invalid or empty!' });
     }
 
     try {
@@ -135,7 +135,7 @@ exports.enrollStudents = async (req, res) => {
             [id, req.user.id]
         );
         if (checkClass.rows.length === 0) {
-            return res.status(403).json({ message: 'Lớp học phần không tồn tại hoặc bạn không có quyền thao tác!' });
+            return res.status(403).json({ message: 'Course class does not exist or permission denied!' });
         }
         const promises = student_ids.map(student_id => {
             return pool.query(
@@ -146,11 +146,11 @@ exports.enrollStudents = async (req, res) => {
         });
         await Promise.all(promises);
         res.status(200).json({
-            message: `Đã ghi danh thành công các sinh viên vào lớp học phần ID: ${id}`
+            message: `Students enrolled successfully to course class ID: ${id}`
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi ghi danh sinh viên' });
+        res.status(500).json({ message: 'Server error while enrolling students' });
     }
 };
 
@@ -165,7 +165,7 @@ exports.getEnrolledStudents = async (req, res) => {
             [id, req.user.id]
         );
         if (checkClass.rows.length === 0) {
-            return res.status(403).json({ message: 'Lớp học phần không tồn tại hoặc bạn không có quyền truy cập!' });
+            return res.status(403).json({ message: 'Course class does not exist or access denied!' });
         }
         const result = await pool.query(
             `SELECT s.id, s.student_code, s.name, s.email, s.status, e.course_class_id 
@@ -177,12 +177,12 @@ exports.getEnrolledStudents = async (req, res) => {
         );
 
         res.status(200).json({
-            message: 'Lấy danh sách sinh viên của lớp học phần thành công',
+            message: 'Fetched enrolled students successfully',
             data: result.rows
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi lấy danh sách sinh viên của lớp' });
+        res.status(500).json({ message: 'Server error while fetching enrolled students' });
     }
 };
 
@@ -201,15 +201,15 @@ exports.deleteCourseClass = async (req, res) => {
         );
 
         if (deleted.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy lớp học phần để xóa hoặc bạn không có quyền!' });
+            return res.status(404).json({ message: 'Course class not found for delete or permission denied!' });
         }
 
         return res.status(200).json({
-            message: 'Xóa lớp học phần thành công!',
+            message: 'Course class deleted successfully!',
             data: deleted.rows[0],
         });
     } catch (error) {
         console.error(error.message);
-        return res.status(500).json({ message: 'Lỗi server khi xóa lớp học phần' });
+        return res.status(500).json({ message: 'Server error while deleting course class' });
     }
 };

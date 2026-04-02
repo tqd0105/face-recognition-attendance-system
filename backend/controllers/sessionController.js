@@ -44,12 +44,12 @@ exports.getSessions = async (req, res) => {
 		const result = await pool.query(query, values);
 
 		res.status(200).json({
-			message: 'Lấy danh sách buổi học thành công',
+			message: 'Fetched sessions successfully',
 			data: result.rows
 		});
 	} catch (error) {
 		console.error(error.message);
-		res.status(500).json({ message: 'Lỗi server khi lấy danh sách buổi học' });
+		res.status(500).json({ message: 'Server error while fetching sessions' });
 	}
 };
 
@@ -67,15 +67,15 @@ exports.createSession = async (req, res) => {
 		);
 
 		res.status(201).json({
-			message: 'Tạo buổi học thành công!',
+			message: 'Session created successfully!',
 			data: newSession.rows[0]
 		});
 	} catch (error) {
 		console.error(error.message);
 		if (error.message.includes('check constraint') || error.message.includes('session_check')) {
-			return res.status(400).json({ message: 'Thời gian bắt đầu phải trước thời gian kết thúc!' });
+			return res.status(400).json({ message: 'Start time must be earlier than end time!' });
 		}
-		res.status(500).json({ message: 'Lỗi server khi tạo buổi học' });
+		res.status(500).json({ message: 'Server error while creating session' });
 	}
 };
 
@@ -89,7 +89,7 @@ exports.updateSession = async (req, res) => {
 	try {
 		const existing = await pool.query('SELECT id FROM Session WHERE id = $1', [id]);
 		if (existing.rows.length === 0) {
-			return res.status(404).json({ message: 'Không tìm thấy buổi học để cập nhật!' });
+			return res.status(404).json({ message: 'Session not found for update!' });
 		}
 
 		const updated = await pool.query(
@@ -105,15 +105,15 @@ exports.updateSession = async (req, res) => {
 		);
 
 		return res.status(200).json({
-			message: 'Cập nhật buổi học thành công!',
+			message: 'Session updated successfully!',
 			data: updated.rows[0],
 		});
 	} catch (error) {
 		console.error(error.message);
 		if (error.message.includes('check constraint') || error.message.includes('session_check')) {
-			return res.status(400).json({ message: 'Thời gian bắt đầu phải trước thời gian kết thúc!' });
+			return res.status(400).json({ message: 'Start time must be earlier than end time!' });
 		}
-		return res.status(500).json({ message: 'Lỗi server khi cập nhật buổi học' });
+		return res.status(500).json({ message: 'Server error while updating session' });
 	}
 };
 
@@ -125,7 +125,7 @@ exports.startSession = async (req, res) => {
 	try {
 		const sessionCheck = await pool.query('SELECT * FROM Session WHERE id = $1', [id]);
 		if (sessionCheck.rows.length === 0) {
-			return res.status(404).json({ message: 'Không tìm thấy buổi học!' });
+			return res.status(404).json({ message: 'Session not found!' });
 		}
 
 		const courseClassId = sessionCheck.rows[0].course_class_id;
@@ -140,7 +140,7 @@ exports.startSession = async (req, res) => {
 		const vectorResult = await pool.query(vectorQuery, [courseClassId]);
 
 		if (vectorResult.rows.length === 0) {
-			return res.status(400).json({ message: 'Lớp học này chưa có sinh viên nào đăng ký khuôn mặt!' });
+			return res.status(400).json({ message: 'No students in this class have enrolled face data yet!' });
 		}
 
 		const aiPayload = vectorResult.rows.map(row => ({
@@ -159,8 +159,8 @@ exports.startSession = async (req, res) => {
 				},
 			});
 		} catch (aiError) {
-			console.error("Lỗi AI Service:", aiError?.response?.data || aiError.message);
-			return res.status(503).json({ message: 'Không thể kết nối với AI Service để nạp dữ liệu nhận diện!' });
+			console.error("AI Service error:", aiError?.response?.data || aiError.message);
+			return res.status(503).json({ message: 'Unable to connect to AI Service to load recognition data!' });
 		}
 
 		const updatedSession = await pool.query(
@@ -169,12 +169,12 @@ exports.startSession = async (req, res) => {
 		);
 
 		res.status(200).json({
-			message: 'Đã bắt đầu buổi học và nạp dữ liệu khuôn mặt lên AI thành công!',
+			message: 'Session started and face embeddings loaded to AI successfully!',
 			data: updatedSession.rows[0]
 		});
 	} catch (error) {
 		console.error(error.message);
-		res.status(500).json({ message: 'Lỗi server khi bắt đầu buổi học' });
+		res.status(500).json({ message: 'Server error while starting session' });
 	}
 };
 
@@ -190,7 +190,7 @@ exports.stopSession = async (req, res) => {
 			[id]
 		);
 		if (updatedSession.rows.length === 0) {
-			return res.status(404).json({ message: 'Không tìm thấy buổi học!' });
+			return res.status(404).json({ message: 'Session not found!' });
 		}
 
 		const { aiServiceUrl, aiServiceToken } = resolveAiConfig();
@@ -203,16 +203,16 @@ exports.stopSession = async (req, res) => {
 				},
 			});
 		} catch (aiError) {
-			console.error("Lỗi AI Service (Giải phóng RAM):", aiError.message);
+			console.error("AI Service error (unload embeddings):", aiError.message);
 		}
 
 		res.status(200).json({
-			message: 'Đã kết thúc buổi học!',
+			message: 'Session stopped successfully!',
 			data: updatedSession.rows[0]
 		});
 	} catch (error) {
 		console.error(error.message);
-		res.status(500).json({ message: 'Lỗi server khi kết thúc buổi học' });
+		res.status(500).json({ message: 'Server error while stopping session' });
 	}
 };
 
@@ -225,7 +225,7 @@ exports.deleteSession = async (req, res) => {
 	try {
 		const existing = await pool.query('SELECT id FROM Session WHERE id = $1', [id]);
 		if (existing.rows.length === 0) {
-			return res.status(404).json({ message: 'Không tìm thấy buổi học để xóa!' });
+			return res.status(404).json({ message: 'Session not found for delete!' });
 		}
 
 		const deleted = await pool.query(
@@ -243,15 +243,15 @@ exports.deleteSession = async (req, res) => {
 				},
 			});
 		} catch (aiError) {
-			console.error('Lỗi AI Service (Unload khi xóa session):', aiError.message);
+			console.error('AI Service error (unload on delete session):', aiError.message);
 		}
 
 		return res.status(200).json({
-			message: 'Xóa buổi học thành công!',
+			message: 'Session deleted successfully!',
 			data: deleted.rows[0],
 		});
 	} catch (error) {
 		console.error(error.message);
-		return res.status(500).json({ message: 'Lỗi server khi xóa buổi học' });
+		return res.status(500).json({ message: 'Server error while deleting session' });
 	}
 };

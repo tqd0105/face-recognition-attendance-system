@@ -5,20 +5,20 @@ const generateToken = require('../utils/jwtToken');
 // @desc    Giảng viên đăng nhập
 // @route   POST /api/auth/login
 exports.loginTeacher = async (req, res) => {
-    const {email, password} = req.body;
+    const { email, password } = req.body;
 
     try {
         const result = await pool.query('SELECT * FROM Teacher WHERE email = $1', [email]);
         const teacher = result.rows[0];
 
         if (!teacher) {
-            return res.status(401).json({ message: 'Email hoặc mật khẩu không chính xác' });
+            return res.status(401).json({ message: 'Invalid email or password' });
         }
 
         const isMatch = await bcrypt.compare(password, teacher.password_hash);
 
         if (!isMatch) {
-            return res.status(401).json({ message: 'Email hoặc mật khẩu không chính xác' });
+            return res.status(401).json({ message: 'Invalid email or password' });
         }
 
         res.json({
@@ -31,7 +31,7 @@ exports.loginTeacher = async (req, res) => {
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server hệ thống' });
+        res.status(500).json({ message: 'Internal server error' });
     }
 };
 
@@ -41,10 +41,10 @@ exports.loginTeacher = async (req, res) => {
 exports.getMe = async (req, res) => {
     try {
         res.json({
-            message: 'Xác thực thành công!',
+            message: 'Authenticated successfully!',
             user_info: req.user
         });
     } catch (error) {
-        res.status(500).json({message: 'Lỗi server hệ thống!'});
+        res.status(500).json({ message: 'Internal server error!' });
     }
 };

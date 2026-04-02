@@ -25,12 +25,12 @@ exports.getStudents = async (req, res) => {
         const result = await pool.query(query, values);
 
         res.status(200).json({
-            message: 'Lấy danh sách sinh viên thành công',
+            message: 'Fetched students successfully',
             data: result.rows
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi lấy danh sách sinh viên' });
+        res.status(500).json({ message: 'Server error while fetching students' });
     }
 };
 
@@ -46,7 +46,7 @@ exports.createStudent = async (req, res) => {
             [student_code, email]
         );
         if (checkExist.rows.length > 0) {
-            return res.status(400).json({ message: 'Mã sinh viên hoặc Email đã tồn tại trong hệ thống!' });
+            return res.status(400).json({ message: 'Student code or email already exists in the system!' });
         }
 
         const newStudent = await pool.query(
@@ -56,12 +56,12 @@ exports.createStudent = async (req, res) => {
         );
 
         res.status(201).json({
-            message: 'Thêm sinh viên thành công!',
+            message: 'Student created successfully!',
             data: newStudent.rows[0]
         })
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi thêm sinh viên' });
+        res.status(500).json({ message: 'Server error while creating student' });
     }
 };
 
@@ -79,7 +79,7 @@ exports.updateStudent = async (req, res) => {
         );
 
         if (checkExist.rows.length > 0) {
-            return res.status(400).json({ message: 'Mã sinh viên hoặc Email đã được sử dụng cho người khác!' });
+            return res.status(400).json({ message: 'Student code or email is already used by another student!' });
         }
 
         const updatedStudent = await pool.query(
@@ -90,16 +90,16 @@ exports.updateStudent = async (req, res) => {
         );
 
         if (updatedStudent.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy sinh viên để cập nhật!' });
+            return res.status(404).json({ message: 'Student not found for update!' });
         }
 
         res.status(200).json({
-            message: 'Cập nhật thông tin sinh viên thành công!',
+            message: 'Student updated successfully!',
             data: updatedStudent.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi cập nhật sinh viên' });
+        res.status(500).json({ message: 'Server error while updating student' });
     }
 };
 
@@ -119,16 +119,16 @@ exports.deleteStudent = async (req, res) => {
         );
 
         if (deletedStudent.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy sinh viên để xóa!' });
+            return res.status(404).json({ message: 'Student not found for delete!' });
         }
 
         res.status(200).json({
-            message: 'Đã vô hiệu hóa (Soft delete) sinh viên thành công!',
+            message: 'Student deactivated successfully (soft delete)!',
             data: deletedStudent.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi xóa sinh viên' });
+        res.status(500).json({ message: 'Server error while deleting student' });
     }
 };
 
@@ -147,16 +147,16 @@ exports.restoreStudent = async (req, res) => {
         );
 
         if (restoredStudent.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy sinh viên để khôi phục!' });
+            return res.status(404).json({ message: 'Student not found for restore!' });
         }
 
         res.status(200).json({
-            message: 'Khôi phục sinh viên thành công!',
+            message: 'Student restored successfully!',
             data: restoredStudent.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi khôi phục sinh viên' });
+        res.status(500).json({ message: 'Server error while restoring student' });
     }
 };
 
@@ -175,15 +175,15 @@ exports.hardDeleteStudent = async (req, res) => {
         );
 
         if (deletedStudent.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy sinh viên để xóa vĩnh viễn!' });
+            return res.status(404).json({ message: 'Student not found for permanent delete!' });
         }
 
         return res.status(200).json({
-            message: 'Đã xóa vĩnh viễn sinh viên thành công!',
+            message: 'Student permanently deleted successfully!',
             data: deletedStudent.rows[0],
         });
     } catch (error) {
         console.error(error.message);
-        return res.status(500).json({ message: 'Lỗi server khi xóa vĩnh viễn sinh viên' });
+        return res.status(500).json({ message: 'Server error while permanently deleting student' });
     }
 };
