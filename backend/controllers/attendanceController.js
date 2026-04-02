@@ -21,20 +21,20 @@ exports.checkIn = async (req, res) => {
 
     try {
         if (!session_id || !student_id) {
-            return res.status(400).json({ message: 'Thiếu session_id hoặc student_id' });
+            return res.status(400).json({ message: 'Missing session_id or student_id' });
         }
 
         const confidence = Number(confidence_score);
         if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
             return res.status(422).json({
-                message: 'Confidence không hợp lệ. Hệ thống cần điểm tin cậy từ 0 đến 1.',
+                message: 'Invalid confidence value. Confidence must be between 0 and 1.',
             });
         }
 
         const minConfidence = Number(process.env.ATTENDANCE_MIN_CONFIDENCE || 0.82);
         if (confidence < minConfidence) {
             return res.status(422).json({
-                message: `Độ tin cậy thấp (${confidence.toFixed(2)} < ${minConfidence.toFixed(2)}). Vui lòng nhìn thẳng, không che mặt và tăng ánh sáng.`,
+                message: `Low confidence (${confidence.toFixed(2)} < ${minConfidence.toFixed(2)}). Please look straight, avoid face occlusion, and improve lighting.`,
             });
         }
 
@@ -46,10 +46,10 @@ exports.checkIn = async (req, res) => {
             [student_id]
         );
         if (studentCheck.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy sinh viên để điểm danh!' });
+            return res.status(404).json({ message: 'Student not found for attendance check-in!' });
         }
         if (!studentCheck.rows[0].has_face_data) {
-            return res.status(422).json({ message: 'Sinh viên chưa đăng ký khuôn mặt. Không thể điểm danh realtime.' });
+            return res.status(422).json({ message: 'Student has no enrolled face data. Realtime check-in is unavailable.' });
         }
 
         const sessionCheck = await pool.query(
@@ -58,10 +58,10 @@ exports.checkIn = async (req, res) => {
             [session_id]
         );
         if (sessionCheck.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy buổi học!' });
+            return res.status(404).json({ message: 'Session not found!' });
         }
         if (sessionCheck.rows[0].status !== 'active') {
-            return res.status(400).json({ message: 'Buổi học chưa bắt đầu hoặc đã kết thúc!' });
+            return res.status(400).json({ message: 'Session is not active (not started or already ended)!' });
         }
 
         const startDatetime = new Date(sessionCheck.rows[0].start_datetime);
@@ -74,26 +74,26 @@ exports.checkIn = async (req, res) => {
 
         const calculatedStatus = now > allowedTime ? 'late' : 'present';
 
-        // If the student has not checked in yet -> Insert new record (INSERT)
-        // If the student has already checked in but the AI scans again -> Update to the latest timestamp (UPDATE)
+        // Keep the first check-in timestamp. If scanned again, only improve confidence.
         const result = await pool.query(
             `INSERT INTO Attendance (session_id, student_id, status, confidence_score) 
             VALUES ($1, $2, $3, $4) 
             ON CONFLICT (session_id, student_id) 
             DO UPDATE SET 
-                check_in_time = CURRENT_TIMESTAMP, 
-                status = EXCLUDED.status, 
                 confidence_score = GREATEST(Attendance.confidence_score, EXCLUDED.confidence_score)
-            RETURNING *`,
+            RETURNING *, (xmax = 0) AS inserted`,
             [session_id, student_id, calculatedStatus, confidence]
         );
+        const inserted = Boolean(result.rows[0]?.inserted);
         res.status(200).json({
-            message: calculatedStatus === 'late' ? 'Ghi nhận: Đi muộn!' : 'Ghi nhận: Có mặt',
+            message: inserted
+                ? (calculatedStatus === 'late' ? 'Recorded: Late attendance!' : 'Recorded: Present attendance!')
+                : 'Student already checked in. The original check-in time is preserved.',
             data: result.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi điểm danh' });
+        res.status(500).json({ message: 'Server error while processing attendance' });
     }
 };
 
@@ -105,7 +105,7 @@ exports.recognizeRealtime = async (req, res) => {
 
     try {
         if (!session_id || !image_base64) {
-            return res.status(400).json({ message: 'Thiếu session_id hoặc image_base64' });
+            return res.status(400).json({ message: 'Missing session_id or image_base64' });
         }
 
         const sessionCheck = await pool.query(
@@ -113,10 +113,10 @@ exports.recognizeRealtime = async (req, res) => {
             [session_id]
         );
         if (sessionCheck.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy buổi học!' });
+            return res.status(404).json({ message: 'Session not found!' });
         }
         if (sessionCheck.rows[0].status !== 'active') {
-            return res.status(400).json({ message: 'Buổi học chưa active. Vui lòng Start session trước khi quét realtime.' });
+            return res.status(400).json({ message: 'Session is not active. Please start the session before realtime scanning.' });
         }
 
         const threshold = toNumeric(min_similarity, toNumeric(process.env.ATTENDANCE_MIN_CONFIDENCE, 0.82));
@@ -147,14 +147,14 @@ exports.recognizeRealtime = async (req, res) => {
             const detailMessage = typeof detail?.message === 'string' ? detail.message : null;
 
             if (statusCode === 404 && detailCode === 'SESSION_NOT_LOADED') {
-                return res.status(409).json({ message: 'Session chưa nạp embedding vào AI. Hãy Start session lại.' });
+                return res.status(409).json({ message: 'Session embeddings are not loaded in AI. Please start the session again.' });
             }
 
             if (statusCode && statusCode >= 400 && statusCode < 500) {
-                return res.status(422).json({ message: detailMessage || 'Khung hình không hợp lệ để nhận diện.' });
+                return res.status(422).json({ message: detailMessage || 'Invalid frame for recognition.' });
             }
 
-            return res.status(503).json({ message: 'AI Service không phản hồi khi recognize realtime.' });
+            return res.status(503).json({ message: 'AI Service is unavailable during realtime recognition.' });
         }
 
         const aiResults = Array.isArray(aiResponse?.data?.results) ? aiResponse.data.results : [];
@@ -200,7 +200,7 @@ exports.recognizeRealtime = async (req, res) => {
                     name: 'Unknown',
                     similarity,
                     bbox,
-                    reason: 'Không xác định được danh tính',
+                    reason: 'Identity could not be determined',
                 });
                 continue;
             }
@@ -216,7 +216,7 @@ exports.recognizeRealtime = async (req, res) => {
                     name: 'Unknown',
                     similarity,
                     bbox,
-                    reason: 'Sinh viên không thuộc dữ liệu nhận diện hợp lệ',
+                    reason: 'Student is not in the valid recognition dataset',
                 });
                 continue;
             }
@@ -231,7 +231,7 @@ exports.recognizeRealtime = async (req, res) => {
                     quality_score: qualityScore,
                     face_area_ratio: faceAreaRatio,
                     bbox,
-                    reason: `Độ tương đồng thấp (${similarity.toFixed(2)} < ${threshold.toFixed(2)})`,
+                    reason: `Low similarity (${similarity.toFixed(2)} < ${threshold.toFixed(2)})`,
                 });
                 continue;
             }
@@ -246,7 +246,7 @@ exports.recognizeRealtime = async (req, res) => {
                     quality_score: qualityScore,
                     face_area_ratio: faceAreaRatio,
                     bbox,
-                    reason: `Chất lượng mặt thấp (${qualityScore.toFixed(2)} < ${minFaceQuality.toFixed(2)}). Hãy nhìn thẳng và đủ sáng.`,
+                    reason: `Low face quality (${qualityScore.toFixed(2)} < ${minFaceQuality.toFixed(2)}). Please look straight and improve lighting.`,
                 });
                 continue;
             }
@@ -261,7 +261,7 @@ exports.recognizeRealtime = async (req, res) => {
                     quality_score: qualityScore,
                     face_area_ratio: faceAreaRatio,
                     bbox,
-                    reason: `Khuôn mặt quá nhỏ trong khung hình (${faceAreaRatio.toFixed(3)} < ${minFaceAreaRatio.toFixed(3)}).`,
+                    reason: `Face is too small in frame (${faceAreaRatio.toFixed(3)} < ${minFaceAreaRatio.toFixed(3)}).`,
                 });
                 continue;
             }
@@ -271,16 +271,20 @@ exports.recognizeRealtime = async (req, res) => {
                  VALUES ($1, $2, 'present', $3)
                  ON CONFLICT (session_id, student_id)
                  DO UPDATE SET
-                    check_in_time = CURRENT_TIMESTAMP,
-                    status = 'present',
                     confidence_score = GREATEST(Attendance.confidence_score, EXCLUDED.confidence_score)
-                 RETURNING id, session_id, student_id, status, confidence_score, check_in_time`,
+                 RETURNING id, session_id, student_id, status, confidence_score, check_in_time, (xmax = 0) AS inserted`,
                 [session_id, studentId, similarity]
             );
 
-            checkedIn.push(attendance.rows[0]);
+            const attendanceRow = attendance.rows[0];
+            const inserted = Boolean(attendanceRow?.inserted);
+
+            if (inserted) {
+                checkedIn.push(attendanceRow);
+            }
+
             detections.push({
-                status: 'matched',
+                status: inserted ? 'matched' : 'rejected',
                 student_id: studentId,
                 student_code: studentInfo.student_code,
                 name: studentInfo.name,
@@ -288,12 +292,14 @@ exports.recognizeRealtime = async (req, res) => {
                 quality_score: qualityScore,
                 face_area_ratio: faceAreaRatio,
                 bbox,
-                reason: 'Check-in thành công',
+                reason: inserted
+                    ? 'Check-in successful'
+                    : `Already checked in (${new Date(attendanceRow.check_in_time).toLocaleTimeString('en-GB', { hour12: false })})`,
             });
         }
 
         return res.status(200).json({
-            message: detections.length === 0 ? 'Không phát hiện khuôn mặt trong khung hình.' : 'Realtime recognition completed.',
+            message: detections.length === 0 ? 'No face detected in the current frame.' : 'Realtime recognition completed.',
             data: {
                 session_id: Number(session_id),
                 threshold,
@@ -303,7 +309,7 @@ exports.recognizeRealtime = async (req, res) => {
         });
     } catch (error) {
         console.error(error.message);
-        return res.status(500).json({ message: 'Lỗi server khi recognize realtime' });
+        return res.status(500).json({ message: 'Server error during realtime recognition' });
     }
 };
 
@@ -315,7 +321,7 @@ exports.checkInOneFace = async (req, res) => {
 
     try {
         if (!session_id || !student_id || !image_base64) {
-            return res.status(400).json({ message: 'Thiếu session_id, student_id hoặc image_base64' });
+            return res.status(400).json({ message: 'Missing session_id, student_id, or image_base64' });
         }
 
         const sessionCheck = await pool.query(
@@ -323,10 +329,10 @@ exports.checkInOneFace = async (req, res) => {
             [session_id]
         );
         if (sessionCheck.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy buổi học!' });
+            return res.status(404).json({ message: 'Session not found!' });
         }
         if (sessionCheck.rows[0].status !== 'active') {
-            return res.status(400).json({ message: 'Buổi học chưa active. Vui lòng Start session trước khi check-in.' });
+            return res.status(400).json({ message: 'Session is not active. Please start the session before check-in.' });
         }
 
         const studentCheck = await pool.query(
@@ -337,10 +343,10 @@ exports.checkInOneFace = async (req, res) => {
             [student_id]
         );
         if (studentCheck.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy sinh viên!' });
+            return res.status(404).json({ message: 'Student not found!' });
         }
         if (!studentCheck.rows[0].has_face_data) {
-            return res.status(422).json({ message: 'Sinh viên chưa đăng ký khuôn mặt.' });
+            return res.status(422).json({ message: 'Student has no enrolled face data.' });
         }
 
         const threshold = toNumeric(min_similarity, toNumeric(process.env.ATTENDANCE_MIN_CONFIDENCE, 0.82));
@@ -371,22 +377,22 @@ exports.checkInOneFace = async (req, res) => {
             const detailMessage = typeof detail?.message === 'string' ? detail.message : null;
 
             if (statusCode === 404 && detailCode === 'SESSION_NOT_LOADED') {
-                return res.status(409).json({ message: 'Session chưa nạp embedding vào AI. Hãy Start session lại.' });
+                return res.status(409).json({ message: 'Session embeddings are not loaded in AI. Please start the session again.' });
             }
 
             if (statusCode && statusCode >= 400 && statusCode < 500) {
-                return res.status(422).json({ message: detailMessage || 'Khung hình không hợp lệ để nhận diện.' });
+                return res.status(422).json({ message: detailMessage || 'Invalid frame for recognition.' });
             }
 
-            return res.status(503).json({ message: 'AI Service không phản hồi khi check-in 1 face.' });
+            return res.status(503).json({ message: 'AI Service is unavailable during one-face check-in.' });
         }
 
         const results = Array.isArray(aiResponse?.data?.results) ? aiResponse.data.results : [];
         if (results.length === 0) {
-            return res.status(422).json({ message: 'Không phát hiện khuôn mặt trong khung hình.' });
+            return res.status(422).json({ message: 'No face detected in the frame.' });
         }
         if (results.length > 1) {
-            return res.status(422).json({ message: 'Phát hiện nhiều khuôn mặt. Check-in 1 face yêu cầu chỉ 1 người trong khung.' });
+            return res.status(422).json({ message: 'Multiple faces detected. One-face check-in requires exactly one face in frame.' });
         }
 
         const face = results[0];
@@ -395,16 +401,16 @@ exports.checkInOneFace = async (req, res) => {
         const faceAreaRatio = toNumeric(face?.face_area_ratio, 0);
 
         if (face?.status !== 'matched' || Number(face?.student_id) !== Number(student_id)) {
-            return res.status(422).json({ message: 'Khuôn mặt không khớp với sinh viên đã chọn.' });
+            return res.status(422).json({ message: 'Face does not match the selected student.' });
         }
         if (similarity < threshold) {
-            return res.status(422).json({ message: `Độ tương đồng thấp (${similarity.toFixed(2)} < ${threshold.toFixed(2)}).` });
+            return res.status(422).json({ message: `Low similarity (${similarity.toFixed(2)} < ${threshold.toFixed(2)}).` });
         }
         if (qualityScore < minFaceQuality) {
-            return res.status(422).json({ message: `Chất lượng khuôn mặt thấp (${qualityScore.toFixed(2)} < ${minFaceQuality.toFixed(2)}).` });
+            return res.status(422).json({ message: `Low face quality (${qualityScore.toFixed(2)} < ${minFaceQuality.toFixed(2)}).` });
         }
         if (faceAreaRatio < minFaceAreaRatio) {
-            return res.status(422).json({ message: `Khuôn mặt quá nhỏ trong khung (${faceAreaRatio.toFixed(3)} < ${minFaceAreaRatio.toFixed(3)}).` });
+            return res.status(422).json({ message: `Face is too small in frame (${faceAreaRatio.toFixed(3)} < ${minFaceAreaRatio.toFixed(3)}).` });
         }
 
         const startDatetime = new Date(sessionCheck.rows[0].start_datetime);
@@ -419,20 +425,22 @@ exports.checkInOneFace = async (req, res) => {
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (session_id, student_id)
              DO UPDATE SET
-                check_in_time = CURRENT_TIMESTAMP,
-                status = EXCLUDED.status,
                 confidence_score = GREATEST(Attendance.confidence_score, EXCLUDED.confidence_score)
-             RETURNING *`,
+             RETURNING *, (xmax = 0) AS inserted`,
             [session_id, student_id, calculatedStatus, similarity]
         );
 
+        const inserted = Boolean(attendance.rows[0]?.inserted);
+
         return res.status(200).json({
-            message: 'Check-in 1 face thành công.',
+            message: inserted
+                ? 'One-face check-in successful.'
+                : 'Student already checked in. The original check-in time is preserved.',
             data: attendance.rows[0],
         });
     } catch (error) {
         console.error(error.message);
-        return res.status(500).json({ message: 'Lỗi server khi check-in 1 face' });
+        return res.status(500).json({ message: 'Server error during one-face check-in' });
     }
 };
 
@@ -449,9 +457,28 @@ exports.getAttendanceBySession = async (req, res) => {
         res.set('Surrogate-Control', 'no-store');
 
         const result = await pool.query(
-            `SELECT a.*, s.student_code, s.name 
+            `SELECT
+                a.*,
+                s.student_code,
+                s.name,
+                s.email,
+                hc.class_code AS home_class_code,
+                hc.major AS home_class_major,
+                hc.department AS home_class_department,
+                se.session_date,
+                se.start_time,
+                se.end_time,
+                se.status AS session_status,
+                cc.course_code,
+                cc.course_name,
+                cc.teacher_id,
+                t.teacher_name
             FROM Attendance a
             JOIN Student s ON a.student_id = s.id
+            LEFT JOIN Home_class hc ON s.home_class_id = hc.id
+            JOIN Session se ON a.session_id = se.id
+            JOIN Course_classes cc ON se.course_class_id = cc.id
+            LEFT JOIN Teacher t ON cc.teacher_id = t.id
             WHERE a.session_id = $1
             ORDER BY a.check_in_time DESC`,
             [session_id]
@@ -459,7 +486,7 @@ exports.getAttendanceBySession = async (req, res) => {
         res.json(result.rows);
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi lấy báo cáo điểm danh' });
+        res.status(500).json({ message: 'Server error while fetching session attendance report' });
     }
 };
 
@@ -484,12 +511,12 @@ exports.updateAttendanceStatus = async (req, res) => {
                 VALUES ($1, $2, $3) RETURNING *`,
                 [session_id, student_id, new_status]
             )
-            return res.status(200).json({ message: 'Đã cập nhật trạng thái!', data: insertResult.rows[0] });
+            return res.status(200).json({ message: 'Attendance status updated!', data: insertResult.rows[0] });
         }
-        res.status(200).json({ message: 'Đã cập nhật trạng thái!', data: result.rows[0] });
+        res.status(200).json({ message: 'Attendance status updated!', data: result.rows[0] });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi cập nhật trạng thái' });
+        res.status(500).json({ message: 'Server error while updating attendance status' });
     }
 };
 
@@ -544,12 +571,12 @@ exports.getAttendanceReport = async (req, res) => {
         });
 
         res.status(200).json({
-            message: 'Lấy báo cáo chuyên cần thành công',
+            message: 'Attendance report fetched successfully',
             data: reportData
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi lập báo cáo' });
+        res.status(500).json({ message: 'Server error while generating attendance report' });
     }
 }
 
@@ -582,12 +609,12 @@ exports.getStudentAttendanceHistory = async (req, res) => {
         const result = await pool.query(query, values);
 
         res.status(200).json({
-            message: 'Lấy lịch sử điểm danh thành công',
+            message: 'Attendance history fetched successfully',
             data: result.rows
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi lấy lịch sử điểm danh' });
+        res.status(500).json({ message: 'Server error while fetching attendance history' });
     }
 };
 
@@ -609,12 +636,12 @@ exports.manualCheckIn = async (req, res) => {
             [session_id, student_id, status]
         );
         res.status(200).json({
-            message: 'Điểm danh thủ công thành công!',
+            message: 'Manual attendance updated successfully!',
             data: result.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi điểm danh thủ công' });
+        res.status(500).json({ message: 'Server error during manual attendance update' });
     }
 };
 
@@ -635,15 +662,15 @@ exports.updateAttendanceById = async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy bản ghi điểm danh này!' });
+            return res.status(404).json({ message: 'Attendance record not found!' });
         }
 
         res.status(200).json({
-            message: 'Cập nhật trạng thái thành công!',
+            message: 'Attendance status updated successfully!',
             data: result.rows[0]
         });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi cập nhật trạng thái' });
+        res.status(500).json({ message: 'Server error while updating attendance status' });
     }
 };
