@@ -27,10 +27,38 @@ const navItems = [
     // { href: "/camera", label: "Camera Page", icon: Camera },
 ];
 
+type TeacherTokenPayload = {
+    id?: number | string;
+    email?: string;
+    role?: string;
+};
+
+function parseTeacherToken(token?: string): TeacherTokenPayload {
+    if (!token) {
+        return {};
+    }
+
+    try {
+        const payloadPart = token.split(".")[1];
+        if (!payloadPart) {
+            return {};
+        }
+
+        const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+        const decoded = atob(padded);
+        const parsed = JSON.parse(decoded) as TeacherTokenPayload;
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
 export function SidebarShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const { user, logout } = useAuth();
     const roleLabel = `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}`;
+    const teacherMeta = parseTeacherToken(user.token);
 
     return (
         <div className="min-h-screen bg-slate-100">
@@ -59,8 +87,23 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
                         })}
                     </nav>
 
-                    <div className="mt-4 w-full rounded-2xl border border-gray-400 bg-white/10 p-4 text-sm backdrop-blur shadow-xl ">
-                        <p className="font-semibold text-slate-900 text-center">{roleLabel}: {user.displayName}</p>
+                    <div className="mt-4 w-full rounded-2xl border border-slate-300 bg-white p-4 text-sm shadow-sm">
+                        <p className="text-center text-base font-semibold text-slate-900">{user.displayName}</p>
+                        <div className="mt-2 grid gap-1.5 text-xs text-slate-600">
+                            <p className="rounded-lg bg-slate-50 px-2 py-1">
+                                <span className="font-medium text-slate-700">Role:</span> {roleLabel}
+                            </p>
+                            {teacherMeta.email && (
+                                <p className="truncate rounded-lg bg-slate-50 px-2 py-1" title={teacherMeta.email}>
+                                    <span className="font-medium text-slate-700">Email:</span> {teacherMeta.email}
+                                </p>
+                            )}
+                            {teacherMeta.id !== undefined && teacherMeta.id !== null && (
+                                <p className="rounded-lg bg-slate-50 px-2 py-1">
+                                    <span className="font-medium text-slate-700">Teacher ID:</span> {teacherMeta.id}
+                                </p>
+                            )}
+                        </div>
                         <button
                             type="button"
                             className="interactive-btn mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-red-500 px-3 py-2 text-sm font-semibold text-white hover:bg-red-600"

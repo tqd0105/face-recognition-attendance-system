@@ -17,6 +17,10 @@ export default function AttendancePage() {
     const timerRef = useRef<number | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const noFaceFrameCountRef = useRef(0);
+    const isScanningRef = useRef(false);
+    const sessionIdRef = useRef("");
+    const isRecognizingRef = useRef(false);
+    const checkedStudentIdsRef = useRef<Set<number>>(new Set());
 
     const { user } = useAuth();
     const canManageAttendance = user.role === "teacher" && Boolean(user.token);
@@ -35,11 +39,29 @@ export default function AttendancePage() {
     const [detections, setDetections] = useState<RealtimeDetection[]>([]);
     const [isRecognizing, setIsRecognizing] = useState(false);
     const [scanStatusText, setScanStatusText] = useState<string>("Idle");
+    const [isAttendanceSynced, setIsAttendanceSynced] = useState(false);
+    const [checkedStudentIds, setCheckedStudentIds] = useState<number[]>([]);
+    const [lastSeenByStudent, setLastSeenByStudent] = useState<Record<string, string>>({});
 
-    const realtimeThreshold = 0.82;
+    const realtimeThreshold = 0.8;
+    const oneFaceThreshold = 0.8;
     const scanIntervalMs = 420;
 
     const selectedStudent = students.find((item) => item.student_code?.trim().toLowerCase() === studentCode.trim().toLowerCase());
+    const selectedStudentId = Number(selectedStudent?.id ?? 0);
+    const selectedStudentAlreadyCheckedIn = selectedStudentId > 0 && checkedStudentIds.includes(selectedStudentId);
+
+    useEffect(() => {
+        isScanningRef.current = isScanning;
+    }, [isScanning]);
+
+    useEffect(() => {
+        sessionIdRef.current = sessionId;
+    }, [sessionId]);
+
+    useEffect(() => {
+        isRecognizingRef.current = isRecognizing;
+    }, [isRecognizing]);
 
     function getStudentDisplayName(studentId: number): string {
         const matched = students.find((item) => Number(item.id) === Number(studentId));
@@ -47,7 +69,7 @@ export default function AttendancePage() {
             return `Student #${studentId}`;
         }
         const code = matched.student_code ?? `Student #${matched.id}`;
-        return `${code} - ${matched.name}`;
+        return `Student: ${matched.name}`;
     }
 
     useEffect(() => {
@@ -141,15 +163,55 @@ export default function AttendancePage() {
         void loadStudents();
     }, []);
 
-    async function refreshEvents() {
+    useEffect(() => {
+        setIsAttendanceSynced(false);
         if (!sessionId.trim()) {
+            checkedStudentIdsRef.current = new Set();
+            setCheckedStudentIds([]);
+            setEvents(attendanceService.getLocal().slice(0, 20));
+            setIsAttendanceSynced(true);
+            return;
+        }
+
+        void refreshEvents(sessionId)
+            .finally(() => {
+                setIsAttendanceSynced(true);
+            });
+    }, [sessionId]);
+
+    async function refreshEvents(sessionIdOverride?: string) {
+        const activeSessionId = (sessionIdOverride ?? sessionId).trim();
+        if (!activeSessionId) {
+            checkedStudentIdsRef.current = new Set();
+            setCheckedStudentIds([]);
             setEvents(attendanceService.getLocal().slice(0, 20));
             return;
         }
 
         try {
-            const latest = await attendanceService.getBySession(Number(sessionId));
+            const latest = await attendanceService.getBySession(Number(activeSessionId));
+            const checkedIds = latest
+                .map((item) => Number(item.student_id))
+                .filter((id) => Number.isFinite(id) && id > 0);
+            checkedStudentIdsRef.current = new Set(
+                latest
+                    .map((item) => Number(item.student_id))
+                    .filter((id) => Number.isFinite(id) && id > 0),
+            );
+            setCheckedStudentIds(checkedIds);
             setEvents(latest.slice(0, 20));
+            setLastSeenByStudent((prev) => {
+                const next = { ...prev };
+                latest.forEach((item) => {
+                    const sid = Number(item.student_id);
+                    const ssid = Number(item.session_id);
+                    if (Number.isFinite(sid) && sid > 0) {
+                        const key = getSeenKey(ssid, sid);
+                        next[key] = mergeLatestTime(next[key], item.check_in_time ?? item.created_at) ?? item.check_in_time;
+                    }
+                });
+                return next;
+            });
 
             const newest = latest[0];
             if (isScanning && newest && String(newest.id) !== lastEventId) {
@@ -159,6 +221,8 @@ export default function AttendancePage() {
                 window.setTimeout(() => setPopupText(null), 2000);
             }
         } catch {
+            checkedStudentIdsRef.current = new Set();
+            setCheckedStudentIds([]);
             setEvents(attendanceService.getLocal().slice(0, 20));
         }
     }
@@ -312,8 +376,71 @@ export default function AttendancePage() {
         };
     }
 
+    function formatEventDateTime(value?: string): string {
+        if (!value) {
+            return "-";
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+
+        return new Intl.DateTimeFormat("en-GB", {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+            timeZone: "Asia/Ho_Chi_Minh",
+            timeZoneName: "short",
+        }).format(parsed);
+    }
+
+    function formatConfidence(value?: number): string {
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+            return "N/A";
+        }
+        return `${(value * 100).toFixed(1)}%`;
+    }
+
+    function mergeLatestTime(currentIso?: string, nextIso?: string): string | undefined {
+        if (!nextIso) {
+            return currentIso;
+        }
+        if (!currentIso) {
+            return nextIso;
+        }
+
+        const currentTs = new Date(currentIso).getTime();
+        const nextTs = new Date(nextIso).getTime();
+        if (Number.isNaN(currentTs) || Number.isNaN(nextTs)) {
+            return nextIso;
+        }
+
+        return nextTs >= currentTs ? nextIso : currentIso;
+    }
+
+    function getSeenKey(sessionValue: number | string, studentValue: number | string): string {
+        return `${sessionValue}:${studentValue}`;
+    }
+
+    function formatSessionWindow(event: AttendanceItem): string {
+        const parts: string[] = [];
+        if (event.session_date) {
+            parts.push(String(event.session_date));
+        }
+        if (event.session_start_time || event.session_end_time) {
+            parts.push(`${event.session_start_time ?? "--:--"} - ${event.session_end_time ?? "--:--"}`);
+        }
+        return parts.length > 0 ? parts.join(" | ") : "N/A";
+    }
+
     async function scanRealtimeFrame() {
-        if (!isScanning || !sessionId || isRecognizing) {
+        const activeSessionId = sessionIdRef.current.trim();
+        if (!isScanningRef.current || !activeSessionId || isRecognizingRef.current) {
             return;
         }
 
@@ -336,16 +463,34 @@ export default function AttendancePage() {
 
         try {
             setIsRecognizing(true);
+            isRecognizingRef.current = true;
             const result = await attendanceService.recognizeRealtime({
-                session_id: Number(sessionId),
+                session_id: Number(activeSessionId),
                 image_base64: imageBase64,
                 min_similarity: realtimeThreshold,
             });
+
+            // Ignore in-flight results that return after user pressed Stop.
+            if (!isScanningRef.current || sessionIdRef.current.trim() !== activeSessionId) {
+                return;
+            }
 
             const nextDetections = Array.isArray(result.detections) ? result.detections : [];
             if (nextDetections.length > 0) {
                 noFaceFrameCountRef.current = 0;
                 setDetections(nextDetections);
+                const nowIso = new Date().toISOString();
+                setLastSeenByStudent((prev) => {
+                    const next = { ...prev };
+                    nextDetections.forEach((item) => {
+                        const sid = Number(item.student_id ?? 0);
+                        if (Number.isFinite(sid) && sid > 0) {
+                            const key = getSeenKey(activeSessionId, sid);
+                            next[key] = mergeLatestTime(next[key], nowIso) ?? nowIso;
+                        }
+                    });
+                    return next;
+                });
             } else {
                 noFaceFrameCountRef.current += 1;
                 if (noFaceFrameCountRef.current >= 3) {
@@ -369,7 +514,7 @@ export default function AttendancePage() {
             }
 
             if (Array.isArray(result.checked_in) && result.checked_in.length > 0) {
-                await refreshEvents();
+                await refreshEvents(activeSessionId);
             }
         } catch (err) {
             const message = err instanceof Error ? err.message : "Realtime recognize failed";
@@ -378,6 +523,7 @@ export default function AttendancePage() {
             window.setTimeout(() => setPopupText(null), 1600);
         } finally {
             setIsRecognizing(false);
+            isRecognizingRef.current = false;
         }
     }
 
@@ -392,13 +538,24 @@ export default function AttendancePage() {
         }
 
         if (!studentCode.trim()) {
-            setPopupText("Please select a student before one-face check-in.");
+            setPopupText("Please select a student before single-face check-in.");
+            return;
+        }
+
+        if (!isAttendanceSynced) {
+            setPopupText("Syncing attendance records. Please wait a moment and try again.");
             return;
         }
 
         const resolvedStudentId = selectedStudent?.id;
         if (!resolvedStudentId) {
             setPopupText("Student code not found. Please select a valid code.");
+            return;
+        }
+
+        if (checkedStudentIdsRef.current.has(Number(resolvedStudentId))) {
+            setPopupText(`${getStudentDisplayName(Number(resolvedStudentId))} already checked in. Please avoid duplicate check-in.`);
+            window.setTimeout(() => setPopupText(null), 2000);
             return;
         }
 
@@ -410,17 +567,21 @@ export default function AttendancePage() {
             }
 
             if (isFrameLikelyInvalid()) {
-                setPopupText("Frame too dark/blocked. Please uncover camera and improve lighting.");
+                setPopupText("Frame too dark/blocked. Please do not cover camera and improve lighting.");
                 return;
             }
 
-            await attendanceService.checkInOneFace({
+            const result = await attendanceService.checkInOneFace({
                 session_id: Number(sessionId),
                 student_id: Number(resolvedStudentId),
                 image_base64: imageBase64,
-                min_similarity: realtimeThreshold,
+                min_similarity: oneFaceThreshold,
             });
-            setPopupText("One-face check-in success");
+            setPopupText(result.message ?? "One-face check-in success");
+            setLastSeenByStudent((prev) => ({
+                ...prev,
+                [getSeenKey(sessionId, Number(resolvedStudentId))]: new Date().toISOString(),
+            }));
             await refreshEvents();
         } catch (err) {
             const message = err instanceof Error ? err.message : "Check-in failed";
@@ -436,6 +597,7 @@ export default function AttendancePage() {
         }
 
         setIsScanning(true);
+        isScanningRef.current = true;
         setDetections([]);
         setLastEventId(null);
         noFaceFrameCountRef.current = 0;
@@ -451,6 +613,7 @@ export default function AttendancePage() {
             timerRef.current = null;
         }
         setIsScanning(false);
+        isScanningRef.current = false;
         setDetections([]);
         noFaceFrameCountRef.current = 0;
         setScanStatusText("Stopped");
@@ -480,14 +643,6 @@ export default function AttendancePage() {
                             <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-800">
                                 <video ref={videoRef} className="h-[300px] w-full object-contain sm:h-[280px] lg:h-[320px]" autoPlay muted playsInline />
                                 <canvas ref={canvasRef} className="hidden" />
-                                <div className="pointer-events-none absolute inset-0">
-                                    <div className="absolute left-1/2 top-1/2 h-[44%] w-[38%] -translate-x-1/2 -translate-y-1/2 rounded-[8px] border border-white/45">
-                                        <span className="absolute left-0 top-0 h-4 w-4 border-l-2 border-t-2 border-white/90" />
-                                        <span className="absolute right-0 top-0 h-4 w-4 border-r-2 border-t-2 border-white/90" />
-                                        <span className="absolute bottom-0 left-0 h-4 w-4 border-b-2 border-l-2 border-white/90" />
-                                        <span className="absolute bottom-0 right-0 h-4 w-4 border-b-2 border-r-2 border-white/90" />
-                                    </div>
-                                </div>
                                 {!isCameraReady && (
                                     <div className="absolute inset-0 grid place-items-center bg-slate-900/55 text-sm font-medium text-white">
                                         Waiting for camera permission...
@@ -542,7 +697,7 @@ export default function AttendancePage() {
 
                             <div>
                                 <label className="text-sm font-semibold text-slate-700" htmlFor="similarity">
-                                    Min Similarity (display only)
+                                    Min Similarity
                                 </label>
                                 <div className="relative mt-1">
                                     <ShieldCheck className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -553,7 +708,7 @@ export default function AttendancePage() {
                                         min={0}
                                         max={1}
                                         step={0.01}
-                                        value={0.82}
+                                        value={realtimeThreshold}
                                         disabled
                                     />
                                 </div>
@@ -576,21 +731,26 @@ export default function AttendancePage() {
                                         </option>
                                     ))}
                                 </select>
-                                <p className="mt-1 text-xs text-slate-500">
+                                <p className="px-2.5 py-2 mt-1 text-xs text-slate-500">
                                     Only needed when you press One-Face Check-in.
                                 </p>
+                                {selectedStudent && selectedStudentAlreadyCheckedIn && (
+                                    <p className=" rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                                        This student has already checked in for this session.
+                                    </p>
+                                )}
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
                             <button
-                                className="interactive-btn inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+                                className="interactive-btn inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                                 data-role={user.role}
                                 onClick={startScanning}
                                 disabled={isScanning || !sessionId.trim() || !canViewAttendance}
                                 type="button"
                             >
-                                <Eye className="h-5 w-5" />
+                                <Eye className="h-4 w-4" />
                                 Start Multi-Face Scan
                             </button>
                             {/* <button
@@ -601,7 +761,7 @@ export default function AttendancePage() {
                                 Focus Camera
                             </button> */}
                             <button
-                                className="interactive-btn inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                                className="interactive-btn inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                                 data-role={user.role}
                                 onClick={stopScanning}
                                 disabled={!isScanning}
@@ -610,13 +770,13 @@ export default function AttendancePage() {
                                 Stop
                             </button>
                             <button
-                                className="interactive-btn inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md"
+                                className="interactive-btn inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg border border-blue-300 bg-blue-50 px-3 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                                 data-role={canManageAttendance ? "teacher" : user.role}
                                 onClick={createCheckIn}
-                                disabled={!canManageAttendance}
+                                disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn}
                                 type="button"
                             >
-                                Check-in 1 Face
+                                Single-Face Check-in
                             </button>
                         </div>
 
@@ -629,18 +789,49 @@ export default function AttendancePage() {
                     {events.length === 0 ? (
                         <p className="mt-2 text-sm text-slate-600">No events yet. Start scanning to receive updates.</p>
                     ) : (
-                        <ul className="mt-3 grid gap-2">
+                        <ul className="mt-3 grid gap-2.5">
                             {events.map((event) => (
                                 <li
                                     key={event.id}
-                                    className="grid gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"
+                                    className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm"
                                 >
-                                    <strong className="text-slate-900">{getStudentDisplayName(event.student_id)}</strong>
-                                    <span className={event.status === "present" ? "font-semibold text-emerald-700" : "font-semibold text-amber-700"}>
-                                        {event.status}
-                                    </span>
-                                    <span>sim={typeof event.confidence_score === "number" ? event.confidence_score.toFixed(2) : "-"}</span>
-                                    <time className="text-slate-500">{new Date(event.check_in_time ?? event.created_at).toLocaleTimeString()}</time>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <strong className="block truncate text-base text-slate-900">{getStudentDisplayName(event.student_id)}</strong>
+                                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                                                <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">{event.student_code ?? `ID ${event.student_id}`}</span>
+                                                {event.home_class_code && <span className="rounded-md bg-blue-50 px-2 py-0.5 font-medium text-blue-700">{event.home_class_code}</span>}
+                                                {event.course_code && <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700">{event.course_code}</span>}
+                                                {(event.teacher_name || event.teacher_id) && (
+                                                    <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                                                        {event.teacher_name ?? `Teacher #${event.teacher_id}`}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="text-right">
+                                            <span
+                                                className={
+                                                    event.status === "present"
+                                                        ? "inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700"
+                                                        : event.status === "late"
+                                                            ? "inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700"
+                                                            : "inline-flex rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700"
+                                                }
+                                            >
+                                                {event.status.toUpperCase()}
+                                            </span>
+                                            <p className="mt-1 text-xs font-medium text-slate-600">Confidence: {formatConfidence(event.confidence_score)}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-2 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
+                                        <time title={event.check_in_time ?? event.created_at ?? ""}>Check-in: {formatEventDateTime(event.check_in_time ?? event.created_at)}</time>
+                                        <time className="sm:text-right" title={lastSeenByStudent[getSeenKey(event.session_id, event.student_id)] ?? ""}>
+                                            Last seen: {formatEventDateTime(lastSeenByStudent[getSeenKey(event.session_id, event.student_id)] ?? event.check_in_time ?? event.created_at)}
+                                        </time>
+                                    </div>
                                 </li>
                             ))}
                         </ul>

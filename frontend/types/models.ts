@@ -108,6 +108,20 @@ export type AttendanceItem = {
   check_in_time: string;
   // Legacy alias for local cache compatibility.
   created_at: string;
+  student_code?: string;
+  student_name?: string;
+  student_email?: string;
+  home_class_code?: string;
+  home_class_major?: string;
+  home_class_department?: string;
+  course_code?: string;
+  course_name?: string;
+  teacher_id?: number;
+  teacher_name?: string;
+  session_date?: string;
+  session_start_time?: string;
+  session_end_time?: string;
+  session_status?: string;
 };
 
 export type RealtimeDetection = {

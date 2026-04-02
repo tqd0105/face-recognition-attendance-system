@@ -50,11 +50,30 @@ type AttendanceApiRow = {
   confidence_score?: number;
   check_in_time?: string;
   created_at?: string;
+  student_code?: string;
+  name?: string;
+  email?: string;
+  home_class_code?: string;
+  home_class_major?: string;
+  home_class_department?: string;
+  course_code?: string;
+  course_name?: string;
+  teacher_id?: number;
+  teacher_name?: string;
+  session_date?: string;
+  start_time?: string;
+  end_time?: string;
+  session_status?: string;
 };
 
 type AttendanceApiResponse = {
   message?: string;
   data?: AttendanceApiRow;
+};
+
+type CheckInOneFaceResult = {
+  item: AttendanceItem;
+  message?: string;
 };
 
 type RealtimeRecognizeApiResponse = {
@@ -72,6 +91,20 @@ function normalizeAttendanceItem(row: AttendanceApiRow): AttendanceItem {
     confidence_score: row.confidence_score,
     check_in_time: checkIn,
     created_at: row.created_at ?? checkIn,
+    student_code: row.student_code,
+    student_name: row.name,
+    student_email: row.email,
+    home_class_code: row.home_class_code,
+    home_class_major: row.home_class_major,
+    home_class_department: row.home_class_department,
+    course_code: row.course_code,
+    course_name: row.course_name,
+    teacher_id: row.teacher_id,
+    teacher_name: row.teacher_name,
+    session_date: row.session_date,
+    session_start_time: row.start_time,
+    session_end_time: row.end_time,
+    session_status: row.session_status,
   };
 }
 
@@ -105,7 +138,7 @@ async function runWithSessionReloadRetry<T>(sessionId: number, request: () => Pr
     try {
       await sessionService.start(sessionId);
     } catch (reloadError) {
-      throw new Error(toApiMessage(reloadError) ?? "Session chưa nạp embedding vào AI. Vui lòng Start session lại.");
+      throw new Error(toApiMessage(reloadError) ?? "Session embeddings are not loaded in AI. Please start the session again.");
     }
 
     return request();
@@ -125,7 +158,7 @@ export const attendanceService = {
       saveAttendanceCache(next);
       return nextItem;
     } catch (error) {
-      rethrowFriendlyError(error, "Không thể thực hiện check-in.");
+      rethrowFriendlyError(error, "Unable to complete check-in.");
     }
   },
 
@@ -137,7 +170,7 @@ export const attendanceService = {
       saveAttendanceCache(next);
       return item;
     } catch (error) {
-      rethrowFriendlyError(error, "Không thể cập nhật điểm danh thủ công.");
+      rethrowFriendlyError(error, "Unable to update manual attendance.");
     }
   },
 
@@ -146,7 +179,7 @@ export const attendanceService = {
     student_id: number;
     image_base64: string;
     min_similarity?: number;
-  }): Promise<AttendanceItem> {
+  }): Promise<CheckInOneFaceResult> {
     try {
       const { data } = await runWithSessionReloadRetry(payload.session_id, () =>
         http.post<AttendanceApiResponse>("/api/attendance/check-in-one-face", payload)
@@ -154,9 +187,12 @@ export const attendanceService = {
       const item = data?.data ? normalizeAttendanceItem(data.data) : toAttendanceItem(payload);
       const next = [item, ...readAttendanceCache()].slice(0, 300);
       saveAttendanceCache(next);
-      return item;
+      return {
+        item,
+        message: data?.message,
+      };
     } catch (error) {
-      rethrowFriendlyError(error, "Không thể check-in 1 face.");
+      rethrowFriendlyError(error, "Unable to complete one-face check-in.");
     }
   },
 
@@ -202,7 +238,7 @@ export const attendanceService = {
         }
       );
     } catch (error) {
-      rethrowFriendlyError(error, "Không thể nhận diện realtime.");
+      rethrowFriendlyError(error, "Unable to run realtime recognition.");
     }
   },
 };
