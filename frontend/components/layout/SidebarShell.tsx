@@ -24,7 +24,7 @@ const navItems = [
     { href: "/courses", label: "Course Class Management", icon: BookOpen },
     { href: "/sessions", label: "Session Management", icon: CalendarClock },
     { href: "/history", label: "Attendance History", icon: UserSquare2 },
-    { href: "/camera", label: "Camera Page", icon: Camera },
+    // { href: "/camera", label: "Camera Page", icon: Camera },
 ];
 
 export function SidebarShell({ children }: { children: React.ReactNode }) {

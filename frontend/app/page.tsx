@@ -65,7 +65,7 @@ const cards: DashboardCard[] = [
         title: "Course Class Management",
         description: "Manage course classes used by sessions and realtime attendance.",
         href: "/courses",
-        cta: "Manage Course Classes",
+        cta: "Manage Course",
         badge: "Teaching",
         iconType: "image",
         icon: SessionIcons,

@@ -22,10 +22,10 @@ function normalizeCourseList(payload: CourseItem[] | CourseListResponse): Course
 export const courseService = {
   async getAll(): Promise<CourseItem[]> {
     try {
-      const { data } = await http.get<CourseItem[] | CourseListResponse>("/api/courses");
+      const { data } = await http.get<CourseItem[] | CourseListResponse>("/api/course-classes");
       return normalizeCourseList(data);
     } catch {
-      const { data } = await http.get<CourseItem[] | CourseListResponse>("/api/course-classes");
+      const { data } = await http.get<CourseItem[] | CourseListResponse>("/api/courses");
       return normalizeCourseList(data);
     }
   },
@@ -74,12 +74,20 @@ export const courseService = {
     };
 
     try {
-      const { data } = await http.put<CourseCreateResponse>(`/api/courses/${id}`, normalizedPayload);
+      const { data } = await http.put<CourseCreateResponse>(`/api/course-classes/${id}`, normalizedPayload);
       if (data?.data) {
         return data.data;
       }
       throw new Error(data?.message || "Cannot update course");
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        const { data } = await http.put<CourseCreateResponse>(`/api/courses/${id}`, normalizedPayload);
+        if (data?.data) {
+          return data.data;
+        }
+        throw new Error(data?.message || "Cannot update course");
+      }
+
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
         (axiosError?.response?.data as { message?: string; error?: string; detail?: string } | undefined)?.message ||
@@ -96,8 +104,13 @@ export const courseService = {
 
   async remove(id: number): Promise<void> {
     try {
-      await http.delete(`/api/courses/${id}`);
+      await http.delete(`/api/course-classes/${id}`);
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        await http.delete(`/api/courses/${id}`);
+        return;
+      }
+
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
         (axiosError?.response?.data as { message?: string; error?: string; detail?: string } | undefined)?.message ||

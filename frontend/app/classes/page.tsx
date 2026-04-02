@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Plus, BookOpenCheck, Layers3, Building2, Pencil, Trash2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { ErrorState, LoadingState } from "@/components/ui/States";
@@ -10,16 +11,18 @@ import type { ClassItem, CreateClassPayload } from "@/types/models";
 import { ClassIcons } from "@/components/icons";
 
 export default function ClassesPage() {
-    const canUpdateClass = false;
-    const canDeleteClass = false;
+    const canUpdateClass = true;
+    const canDeleteClass = true;
 
     const [classes, setClasses] = useState<ClassItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [modalError, setModalError] = useState<string | null>(null);
     const [editingClassId, setEditingClassId] = useState<number | null>(null);
+    const [pendingDeleteClass, setPendingDeleteClass] = useState<ClassItem | null>(null);
     const [form, setForm] = useState<CreateClassPayload>({
         class_code: "",
         major: "",
@@ -68,8 +71,7 @@ export default function ClassesPage() {
             setIsCreating(true);
             setModalError(null);
             if (editingClassId) {
-                setModalError("Current backend does not support updating home classes yet.");
-                return;
+                await classService.update(editingClassId, form);
             } else {
                 await classService.create(form);
             }
@@ -85,32 +87,35 @@ export default function ClassesPage() {
         }
     }
 
-    async function onDeleteClass(item: ClassItem) {
+    function onDeleteClass(item: ClassItem) {
         if (!canDeleteClass) {
             setError("Current backend does not support deleting home classes yet.");
             return;
         }
 
-        const accepted = window.confirm(`Delete home class ${item.class_code ?? item.id}?`);
-        if (!accepted) {
+        setPendingDeleteClass(item);
+    }
+
+    async function onConfirmDeleteClass() {
+        if (!pendingDeleteClass) {
             return;
         }
 
         try {
-            await classService.remove(item.id);
+            setIsDeleting(true);
+            setError(null);
+            await classService.remove(pendingDeleteClass.id);
+            setPendingDeleteClass(null);
             await loadClasses();
         } catch (err) {
             const message = err instanceof Error ? err.message : "Cannot delete class";
             setError(message);
+        } finally {
+            setIsDeleting(false);
         }
     }
 
     function onEditClass(item: ClassItem) {
-        if (!canUpdateClass) {
-            setError("Current backend does not support editing home classes yet.");
-            return;
-        }
-
         setModalError(null);
         setEditingClassId(item.id);
         setForm({
@@ -149,7 +154,7 @@ export default function ClassesPage() {
                 ),
             },
         ],
-        [],
+        [canUpdateClass],
     );
 
     const totalClasses = classes.length;
@@ -165,7 +170,7 @@ export default function ClassesPage() {
                     </div>
                     <div>
                         <h1 className="mt-2 text-3xl font-bold sm:text-3xl">Home Class Management</h1>
-                        <p className="mt-2 text-md text-slate-100 sm:text-base">Control class metadata, major grouping, and department mapping.</p>
+                        <p className="mt-2 text-md text-slate-100 sm:text-base">Manage classes, departments, and majors for attendance and student organization.</p>
                     </div>
                 </header>
 
@@ -202,9 +207,9 @@ export default function ClassesPage() {
                     </button>
                 </div>
 
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-                    Current backend supports listing and creating home classes. Edit/Delete will be enabled after backend update APIs are added.
-                </div>
+                {/* <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                    Current backend supports create/delete home classes. Edit will be enabled after backend update API is added.
+                </div> */}
 
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                     {isLoading && <LoadingState label="Loading home class table..." />}
@@ -272,6 +277,20 @@ export default function ClassesPage() {
                     </button>
                 </form>
             </Modal>
+
+            <ConfirmDialog
+                open={Boolean(pendingDeleteClass)}
+                title="Delete Home Class"
+                message={`Are you sure you want to delete ${pendingDeleteClass?.class_code ?? `Class #${pendingDeleteClass?.id ?? ""}`}?`}
+                onConfirm={onConfirmDeleteClass}
+                onClose={() => {
+                    if (!isDeleting) {
+                        setPendingDeleteClass(null);
+                    }
+                }}
+                confirmText="Delete Home Class"
+                isLoading={isDeleting}
+            />
         </main>
     );
 }

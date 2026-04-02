@@ -272,6 +272,22 @@ export default function EnrollmentPage() {
                 const fileBase = matchedStudent.student_code?.trim() || `student-${matchedStudent.id}`;
                 await biometricService.enroll(matchedStudent.id, imageBlob, `${fileBase}-${Date.now()}.jpg`);
 
+                if ((matchedStudent.status ?? "active") !== "active") {
+                    const resolvedEmail = matchedStudent.email?.trim();
+                    if (!resolvedEmail) {
+                        setNotice("Face enrolled but student is inactive and has no email to reactivate profile automatically.");
+                    } else {
+                        const currentClassId = Number(matchedStudent.home_class_id ?? matchedStudent.class_id ?? 0) || undefined;
+                        await studentService.update(matchedStudent.id, {
+                            student_code: matchedStudent.student_code?.trim() || studentCode.trim(),
+                            name: matchedStudent.name?.trim() || studentName.trim(),
+                            email: resolvedEmail,
+                            home_class_id: resolvedHomeClassId ?? currentClassId,
+                            status: "active",
+                        });
+                    }
+                }
+
                 setHasFaceEnrolled(true);
                 setFaceEnrolledAt(new Date().toISOString());
                 setNotice("Face enrollment successful.");
@@ -310,7 +326,8 @@ export default function EnrollmentPage() {
                             <p className="text-xs font-semibold uppercase tracking-[0.16em]">Face Enrollment</p>
                             <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Register Student Face</h1>
                             <p className="mt-2 text-sm text-slate-100 sm:text-base">
-                                Register students and map them to classes for face recognition attendance.
+                                Register student face data and link students to classes
+                                for automated face recognition attendance.
                             </p>
                         </div>
                     </div>
@@ -428,13 +445,13 @@ export default function EnrollmentPage() {
                                 {isSubmitting ? "Submitting..." : "Capture and Enroll"}
                             </button>
 
-                            <button
+                            {/* <button
                                 type="button"
                                 className="interactive-btn inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md"
                                 onClick={() => setIsFocusMode(true)}
                             >
                                 Focus Camera
-                            </button>
+                            </button> */}
                         </div>
                     </form>
                 </div>

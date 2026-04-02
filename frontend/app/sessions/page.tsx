@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, CalendarClock, Layers, CircleCheckBig, Pencil, Trash2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { courseService } from "@/services/course.service";
@@ -10,14 +11,17 @@ import type { CourseItem, Session } from "@/types/models";
 import { SessionIcons } from "@/components/icons";
 
 export default function SessionsPage() {
-    const canUpdateSession = false;
-    const canDeleteSession = false;
+    const canUpdateSession = true;
+    const canDeleteSession = true;
+    const canControlSession = true;
 
     const [sessions, setSessions] = useState<Session[]>([]);
     const [courses, setCourses] = useState<CourseItem[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
+    const [pendingDeleteSession, setPendingDeleteSession] = useState<Session | null>(null);
     const [selectedCourseClassId, setSelectedCourseClassId] = useState("");
     const [sessionDate, setSessionDate] = useState("");
     const [startTime, setStartTime] = useState("");
@@ -112,8 +116,7 @@ export default function SessionsPage() {
             };
 
             if (editingSessionId) {
-                setModalError("Current backend does not support updating sessions yet.");
-                return;
+                await sessionService.update(editingSessionId, payload);
             } else {
                 await sessionService.create(payload);
             }
@@ -138,56 +141,79 @@ export default function SessionsPage() {
         }
     }
 
-    function normalizeDateInput(value: string): string {
-        if (!value) {
-            return "";
-        }
-        return value.split("T")[0] ?? value;
-    }
-
-    function normalizeTimeInput(value: string): string {
-        if (!value) {
-            return "";
-        }
-        return value.slice(0, 5);
-    }
-
-    function onEditSession(item: Session) {
-        if (!canUpdateSession) {
-            setError("Current backend does not support editing sessions yet.");
-            return;
-        }
-
+    const onEditSession = useCallback((item: Session) => {
         setModalError(null);
         setEditingSessionId(item.id);
         setSelectedCourseClassId(String(item.course_class_id ?? item.class_id ?? ""));
-        setSessionDate(normalizeDateInput(item.session_date));
-        setStartTime(normalizeTimeInput(item.start_time));
-        setEndTime(normalizeTimeInput(item.end_time));
+        setSessionDate(item.session_date ? item.session_date.split("T")[0] ?? item.session_date : "");
+        setStartTime(item.start_time ? item.start_time.slice(0, 5) : "");
+        setEndTime(item.end_time ? item.end_time.slice(0, 5) : "");
         setStatus(item.status ?? "scheduled");
         setIsModalOpen(true);
-    }
+    }, []);
 
-    async function onDeleteSession(item: Session) {
+    const onDeleteSession = useCallback((item: Session) => {
         if (!canDeleteSession) {
             setError("Current backend does not support deleting sessions yet.");
             return;
         }
 
-        const accepted = window.confirm(`Delete session #${item.id}?`);
-        if (!accepted) {
+        setPendingDeleteSession(item);
+    }, [canDeleteSession]);
+
+    const onConfirmDeleteSession = useCallback(async () => {
+        if (!pendingDeleteSession) {
             return;
         }
 
         try {
-            await sessionService.remove(item.id);
+            setIsDeleting(true);
+            setError(null);
+            await sessionService.remove(pendingDeleteSession.id);
+            setPendingDeleteSession(null);
             const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
             setSessions(latest);
         } catch (err) {
             const message = err instanceof Error ? err.message : "Cannot delete session";
             setError(message);
+        } finally {
+            setIsDeleting(false);
         }
-    }
+    }, [courses, pendingDeleteSession]);
+
+    const onStartSession = useCallback(async (item: Session) => {
+        if (!canControlSession) {
+            setError("Current backend does not support starting sessions yet.");
+            return;
+        }
+
+        try {
+            setError(null);
+            await sessionService.start(item.id);
+            const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
+            setSessions(latest);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Cannot start session";
+            setError(message);
+        }
+    }, [canControlSession, courses]);
+
+    const onStopSession = useCallback(async (item: Session) => {
+        if (!canControlSession) {
+            setError("Current backend does not support stopping sessions yet.");
+            return;
+        }
+
+        try {
+            setError(null);
+            await sessionService.stop(item.id);
+            const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
+            setSessions(latest);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Cannot stop session";
+            setError(message);
+        }
+    }, [canControlSession, courses]);
 
     const columns = useMemo(
         () => [
@@ -212,6 +238,24 @@ export default function SessionsPage() {
                 title: "Actions",
                 render: (row: Session) => (
                     <div className="flex gap-2">
+                        {row.status === "active" ? (
+                            <button
+                                type="button"
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                                onClick={() => onStopSession(row)}
+                            >
+                                Stop
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                                onClick={() => onStartSession(row)}
+                                disabled={row.status === "completed" || row.status === "canceled"}
+                            >
+                                Start
+                            </button>
+                        )}
                         <button
                             type="button"
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
@@ -230,7 +274,7 @@ export default function SessionsPage() {
                 ),
             },
         ],
-        [classCodeMap, courses],
+        [classCodeMap, onDeleteSession, onEditSession, onStartSession, onStopSession],
     );
 
     const totalSessions = sessions.length;
@@ -292,11 +336,11 @@ export default function SessionsPage() {
                     </div>
                 )}
 
-                {!error && (
+                {/* {!error && (
                     <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-                        Current backend supports listing and creating sessions. Edit/Delete/Start/Stop actions are not available yet.
+                        Current backend supports listing, creating, and start/stop session lifecycle. Edit/Delete fallback may still be unavailable.
                     </div>
-                )}
+                )} */}
 
                 {/* {!error && hasCourseOptions && (
                     <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
@@ -416,6 +460,20 @@ export default function SessionsPage() {
                     )}
                 </form>
             </Modal>
+
+            <ConfirmDialog
+                open={Boolean(pendingDeleteSession)}
+                title="Delete Session"
+                message={`Are you sure you want to delete session #${pendingDeleteSession?.id ?? ""}?`}
+                onConfirm={onConfirmDeleteSession}
+                onClose={() => {
+                    if (!isDeleting) {
+                        setPendingDeleteSession(null);
+                    }
+                }}
+                confirmText="Delete Session"
+                isLoading={isDeleting}
+            />
         </main>
     );
 }

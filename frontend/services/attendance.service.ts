@@ -1,5 +1,7 @@
 import { http } from "@/services/http";
-import type { AttendanceItem, AttendancePayload } from "@/types/models";
+import axios from "axios";
+import { sessionService } from "@/services/session.service";
+import type { AttendanceItem, AttendancePayload, RealtimeRecognizeResponse } from "@/types/models";
 
 const ATTENDANCE_CACHE_KEY = "fras_attendance_cache";
 
@@ -40,16 +42,167 @@ function toAttendanceItem(payload: AttendancePayload): AttendanceItem {
   };
 }
 
+type AttendanceApiRow = {
+  id?: number | string;
+  session_id?: number;
+  student_id?: number;
+  status?: string;
+  confidence_score?: number;
+  check_in_time?: string;
+  created_at?: string;
+};
+
+type AttendanceApiResponse = {
+  message?: string;
+  data?: AttendanceApiRow;
+};
+
+type RealtimeRecognizeApiResponse = {
+  message?: string;
+  data?: RealtimeRecognizeResponse;
+};
+
+function normalizeAttendanceItem(row: AttendanceApiRow): AttendanceItem {
+  const checkIn = row.check_in_time ?? row.created_at ?? new Date().toISOString();
+  return {
+    id: String(row.id ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    session_id: Number(row.session_id ?? 0),
+    student_id: Number(row.student_id ?? 0),
+    status: row.status ?? "present",
+    confidence_score: row.confidence_score,
+    check_in_time: checkIn,
+    created_at: row.created_at ?? checkIn,
+  };
+}
+
+function toApiMessage(error: unknown): string | null {
+  if (!axios.isAxiosError(error)) {
+    return null;
+  }
+
+  const data = error.response?.data as { message?: string; error?: string; detail?: string | { message?: string } } | undefined;
+  if (typeof data?.detail === "string") {
+    return data.detail;
+  }
+  if (data?.detail && typeof data.detail === "object" && typeof data.detail.message === "string") {
+    return data.detail.message;
+  }
+  return data?.message ?? data?.error ?? null;
+}
+
+function rethrowFriendlyError(error: unknown, fallback: string): never {
+  throw new Error(toApiMessage(error) ?? fallback);
+}
+
+async function runWithSessionReloadRetry<T>(sessionId: number, request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    if (!axios.isAxiosError(error) || error.response?.status !== 409) {
+      throw error;
+    }
+
+    try {
+      await sessionService.start(sessionId);
+    } catch (reloadError) {
+      throw new Error(toApiMessage(reloadError) ?? "Session chưa nạp embedding vào AI. Vui lòng Start session lại.");
+    }
+
+    return request();
+  }
+}
+
 export const attendanceService = {
   getLocal(): AttendanceItem[] {
     return readAttendanceCache();
   },
 
   async mark(payload: AttendancePayload): Promise<AttendanceItem> {
-    await http.post("/api/attendance/check-in", payload);
-    const nextItem = toAttendanceItem(payload);
-    const next = [nextItem, ...readAttendanceCache()].slice(0, 300);
-    saveAttendanceCache(next);
-    return nextItem;
+    try {
+      const { data } = await http.post<AttendanceApiResponse>("/api/attendance/check-in", payload);
+      const nextItem = data?.data ? normalizeAttendanceItem(data.data) : toAttendanceItem(payload);
+      const next = [nextItem, ...readAttendanceCache()].slice(0, 300);
+      saveAttendanceCache(next);
+      return nextItem;
+    } catch (error) {
+      rethrowFriendlyError(error, "Không thể thực hiện check-in.");
+    }
+  },
+
+  async manualMark(payload: AttendancePayload): Promise<AttendanceItem> {
+    try {
+      const { data } = await http.post<AttendanceApiResponse>("/api/attendance/manual", payload);
+      const item = data?.data ? normalizeAttendanceItem(data.data) : toAttendanceItem(payload);
+      const next = [item, ...readAttendanceCache()].slice(0, 300);
+      saveAttendanceCache(next);
+      return item;
+    } catch (error) {
+      rethrowFriendlyError(error, "Không thể cập nhật điểm danh thủ công.");
+    }
+  },
+
+  async checkInOneFace(payload: {
+    session_id: number;
+    student_id: number;
+    image_base64: string;
+    min_similarity?: number;
+  }): Promise<AttendanceItem> {
+    try {
+      const { data } = await runWithSessionReloadRetry(payload.session_id, () =>
+        http.post<AttendanceApiResponse>("/api/attendance/check-in-one-face", payload)
+      );
+      const item = data?.data ? normalizeAttendanceItem(data.data) : toAttendanceItem(payload);
+      const next = [item, ...readAttendanceCache()].slice(0, 300);
+      saveAttendanceCache(next);
+      return item;
+    } catch (error) {
+      rethrowFriendlyError(error, "Không thể check-in 1 face.");
+    }
+  },
+
+  async getBySession(sessionId: number): Promise<AttendanceItem[]> {
+    const { data } = await http.get<AttendanceApiRow[]>(`/api/attendance/session/${sessionId}`, {
+      params: {
+        _t: Date.now(),
+      },
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
+    });
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
+    const items = data.map(normalizeAttendanceItem);
+    saveAttendanceCache(items.slice(0, 300));
+    return items;
+  },
+
+  async updateById(id: string, status: string): Promise<AttendanceItem> {
+    const { data } = await http.put<AttendanceApiResponse>(`/api/attendance/${id}`, { status });
+    return data?.data ? normalizeAttendanceItem(data.data) : normalizeAttendanceItem({ id, status });
+  },
+
+  async recognizeRealtime(payload: {
+    session_id: number;
+    image_base64: string;
+    min_similarity?: number;
+  }): Promise<RealtimeRecognizeResponse> {
+    try {
+      const { data } = await runWithSessionReloadRetry(payload.session_id, () =>
+        http.post<RealtimeRecognizeApiResponse>("/api/attendance/recognize", payload)
+      );
+      return (
+        data?.data ?? {
+          session_id: payload.session_id,
+          threshold: payload.min_similarity ?? 0.82,
+          detections: [],
+          checked_in: [],
+        }
+      );
+    } catch (error) {
+      rethrowFriendlyError(error, "Không thể nhận diện realtime.");
+    }
   },
 };

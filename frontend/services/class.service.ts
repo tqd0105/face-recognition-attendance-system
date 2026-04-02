@@ -22,10 +22,10 @@ function normalizeClassList(payload: ClassItem[] | HomeClassListResponse): Class
 export const classService = {
   async getAll(): Promise<ClassItem[]> {
     try {
-      const { data } = await http.get<ClassItem[] | HomeClassListResponse>("/api/classes");
+      const { data } = await http.get<ClassItem[] | HomeClassListResponse>("/api/home-classes");
       return normalizeClassList(data);
     } catch {
-      const { data } = await http.get<ClassItem[] | HomeClassListResponse>("/api/home-classes");
+      const { data } = await http.get<ClassItem[] | HomeClassListResponse>("/api/classes");
       return normalizeClassList(data);
     }
   },
@@ -94,12 +94,20 @@ export const classService = {
     }
 
     try {
-      const { data } = await http.put<HomeClassCreateResponse>(`/api/classes/${id}`, normalizedPayload);
+      const { data } = await http.put<HomeClassCreateResponse>(`/api/home-classes/${id}`, normalizedPayload);
       if (data?.data) {
         return data.data;
       }
       throw new Error(data?.message || "Cannot update class");
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        const { data } = await http.put<HomeClassCreateResponse>(`/api/classes/${id}`, normalizedPayload);
+        if (data?.data) {
+          return data.data;
+        }
+        throw new Error(data?.message || "Cannot update class");
+      }
+
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
         (axiosError?.response?.data as { message?: string; error?: string; detail?: string } | undefined)?.message ||
@@ -116,8 +124,13 @@ export const classService = {
 
   async remove(id: number): Promise<void> {
     try {
-      await http.delete(`/api/classes/${id}`);
+      await http.delete(`/api/home-classes/${id}`);
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        await http.delete(`/api/classes/${id}`);
+        return;
+      }
+
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
         (axiosError?.response?.data as { message?: string; error?: string; detail?: string } | undefined)?.message ||

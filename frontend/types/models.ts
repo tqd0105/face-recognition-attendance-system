@@ -34,6 +34,7 @@ export type CreateStudentPayload = {
   name: string;
   email?: string;
   home_class_id?: number;
+  status?: string;
   // Legacy alias for older backend payloads.
   class_id?: number;
 };
@@ -107,4 +108,30 @@ export type AttendanceItem = {
   check_in_time: string;
   // Legacy alias for local cache compatibility.
   created_at: string;
+};
+
+export type RealtimeDetection = {
+  status: "matched" | "rejected" | "unknown";
+  student_id: number | null;
+  student_code: string | null;
+  name: string;
+  similarity: number;
+  bbox: number[];
+  reason?: string;
+  quality_score?: number;
+  face_area_ratio?: number;
+};
+
+export type RealtimeRecognizeResponse = {
+  session_id: number;
+  threshold: number;
+  detections: RealtimeDetection[];
+  checked_in: Array<{
+    id: number;
+    session_id: number;
+    student_id: number;
+    status: string;
+    confidence_score?: number;
+    check_in_time: string;
+  }>;
 };

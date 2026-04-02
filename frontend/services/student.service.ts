@@ -58,6 +58,7 @@ export const studentService = {
       name: payload.name,
       email: payload.email,
       home_class_id: payload.home_class_id ?? payload.class_id,
+      status: payload.status,
     };
 
     try {
@@ -70,6 +71,7 @@ export const studentService = {
         name: payload.name,
         email: payload.email,
         class_id: payload.home_class_id ?? payload.class_id,
+        status: payload.status,
       };
       const { data } = await http.post<StudentCreateResponse | StudentApiResponse>("/api/students", fallbackPayload);
       const payloadData = (data as StudentCreateResponse)?.data ?? (data as StudentApiResponse);
@@ -83,6 +85,7 @@ export const studentService = {
       name: payload.name,
       email: payload.email,
       home_class_id: payload.home_class_id ?? payload.class_id,
+      status: payload.status,
     };
 
     try {
@@ -110,7 +113,35 @@ export const studentService = {
       }
       const axiosError = axios.isAxiosError(error) ? error : null;
       const status = axiosError?.response?.status;
-      throw new Error(status ? `Cannot delete student (HTTP ${status})` : "Cannot delete student");
+      throw new Error(status ? `Cannot deactivate student (HTTP ${status})` : "Cannot deactivate student");
+    }
+  },
+
+  async restore(id: number): Promise<void> {
+    try {
+      await http.patch(`/api/students/${id}/restore`);
+    } catch (error) {
+      const message = extractApiMessage(error);
+      if (message) {
+        throw new Error(message);
+      }
+      const axiosError = axios.isAxiosError(error) ? error : null;
+      const status = axiosError?.response?.status;
+      throw new Error(status ? `Cannot restore student (HTTP ${status})` : "Cannot restore student");
+    }
+  },
+
+  async hardDelete(id: number): Promise<void> {
+    try {
+      await http.delete(`/api/students/${id}/permanent`);
+    } catch (error) {
+      const message = extractApiMessage(error);
+      if (message) {
+        throw new Error(message);
+      }
+      const axiosError = axios.isAxiosError(error) ? error : null;
+      const status = axiosError?.response?.status;
+      throw new Error(status ? `Cannot permanently delete student (HTTP ${status})` : "Cannot permanently delete student");
     }
   },
 };

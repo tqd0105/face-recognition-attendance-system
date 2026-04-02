@@ -1,8 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Users, Mail, BadgeCheck, Pencil, Trash2 } from "lucide-react";
+import { Plus, Users, Mail, BadgeCheck, Pencil, RotateCcw, Trash2, UserX } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Modal } from "@/components/ui/Modal";
 import { ErrorState, LoadingState } from "@/components/ui/States";
 import { classService } from "@/services/class.service";
@@ -18,7 +19,11 @@ export default function StudentsPage() {
     const [modalError, setModalError] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [editingStudentId, setEditingStudentId] = useState<number | null>(null);
+    const [pendingDeleteStudent, setPendingDeleteStudent] = useState<Student | null>(null);
+    const [pendingAction, setPendingAction] = useState<"deactivate" | "restore" | "hard-delete">("deactivate");
+    const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
 
     const [form, setForm] = useState<CreateStudentPayload>({
         student_code: "",
@@ -58,6 +63,13 @@ export default function StudentsPage() {
     const homeClassCodeMap = useMemo(() => {
         return new Map(homeClasses.map((item) => [Number(item.id), item.class_code ?? `Class #${item.id}`]));
     }, [homeClasses]);
+
+    const visibleStudents = useMemo(() => {
+        if (statusFilter === "all") {
+            return students;
+        }
+        return students.filter((item) => (item.status ?? "active") === statusFilter);
+    }, [statusFilter, students]);
 
     async function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -104,20 +116,51 @@ export default function StudentsPage() {
         }
     }
 
-    const onDeleteStudent = useCallback(async (student: Student) => {
-        const accepted = window.confirm(`Delete student ${student.student_code ?? student.name}?`);
-        if (!accepted) {
+    const onDeleteStudent = useCallback((student: Student) => {
+        setPendingAction("deactivate");
+        setPendingDeleteStudent(student);
+    }, []);
+
+    const onRestoreStudent = useCallback((student: Student) => {
+        setPendingAction("restore");
+        setPendingDeleteStudent(student);
+    }, []);
+
+    const onHardDeleteStudent = useCallback((student: Student) => {
+        setPendingAction("hard-delete");
+        setPendingDeleteStudent(student);
+    }, []);
+
+    const onConfirmDeleteStudent = useCallback(async () => {
+        if (!pendingDeleteStudent) {
             return;
         }
 
         try {
-            await studentService.remove(student.id);
+            setIsDeleting(true);
+            setError(null);
+            if (pendingAction === "restore") {
+                await studentService.restore(pendingDeleteStudent.id);
+            } else if (pendingAction === "hard-delete") {
+                await studentService.hardDelete(pendingDeleteStudent.id);
+            } else {
+                await studentService.remove(pendingDeleteStudent.id);
+            }
+            setPendingDeleteStudent(null);
             await loadStudents();
         } catch (err) {
-            const message = err instanceof Error ? err.message : "Cannot delete student";
+            const message = err instanceof Error
+                ? err.message
+                : pendingAction === "restore"
+                    ? "Cannot restore student"
+                    : pendingAction === "hard-delete"
+                        ? "Cannot permanently delete student"
+                        : "Cannot deactivate student";
             setError(message);
+        } finally {
+            setIsDeleting(false);
         }
-    }, [loadStudents]);
+    }, [loadStudents, pendingAction, pendingDeleteStudent]);
 
     const onEditStudent = useCallback((student: Student) => {
         setModalError(null);
@@ -152,31 +195,63 @@ export default function StudentsPage() {
                 key: "actions",
                 title: "Actions",
                 render: (row: Student) => (
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-1.5">
                         <button
                             type="button"
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
                             onClick={() => onEditStudent(row)}
+                            title="Edit student"
+                            aria-label="Edit student"
                         >
-                            <Pencil className="h-3.5 w-3.5" /> Edit
+                            <Pencil className="h-3.5 w-3.5" />
+                            <span className="hidden 2xl:inline text-xs font-semibold">Edit</span>
                         </button>
-                        <button
-                            type="button"
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-                            onClick={() => onDeleteStudent(row)}
-                        >
-                            <Trash2 className="h-3.5 w-3.5" /> Delete
-                        </button>
+                        {(row.status ?? "active") === "inactive" ? (
+                            <>
+                                <button
+                                    type="button"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
+                                    onClick={() => onRestoreStudent(row)}
+                                    title="Restore student"
+                                    aria-label="Restore student"
+                                >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                    <span className="hidden 2xl:inline text-xs font-semibold">Restore</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
+                                    onClick={() => onHardDeleteStudent(row)}
+                                    title="Delete student permanently"
+                                    aria-label="Delete student permanently"
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <span className="hidden 2xl:inline text-xs font-semibold">Delete Permanently</span>
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                type="button"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
+                                onClick={() => onDeleteStudent(row)}
+                                title="Deactivate student"
+                                aria-label="Deactivate student"
+                            >
+                                <UserX className="h-3.5 w-3.5" />
+                                <span className="hidden 2xl:inline text-xs font-semibold">Deactivate</span>
+                            </button>
+                        )}
                     </div>
                 ),
             },
         ],
-        [homeClassCodeMap, onDeleteStudent, onEditStudent],
+        [homeClassCodeMap, onDeleteStudent, onEditStudent, onHardDeleteStudent, onRestoreStudent],
     );
 
     const totalStudents = students.length;
-    const studentsWithEmail = students.filter((item) => Boolean(item.email?.trim())).length;
+    const studentsWithEmail = visibleStudents.filter((item) => Boolean(item.email?.trim())).length;
     const activeStudents = students.filter((item) => (item.status ?? "active") === "active").length;
+    const inactiveStudents = students.filter((item) => (item.status ?? "active") === "inactive").length;
 
     return (
         <main className="motion-page space-y-4 px-1 py-1 sm:px-2">
@@ -187,7 +262,7 @@ export default function StudentsPage() {
                     </div>
                     <div>
                         <h1 className="mt-2 text-3xl font-bold sm:text-3xl">Student Management</h1>
-                        <p className="mt-2 text-md text-slate-100 sm:text-base">Manage student profiles, class mapping, and identity consistency.</p>
+                        <p className="mt-2 text-md text-slate-100 sm:text-base">Manage student information, class assignments, and student identity records.</p>
                     </div>
                 </header>
 
@@ -209,6 +284,38 @@ export default function StudentsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
                     <div className="ml-4">
                         <p className=" text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">List Student</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                className={`rounded-lg border px-3 py-1 text-xs font-semibold transition ${statusFilter === "active"
+                                    ? "border-blue-600 bg-blue-600 text-white"
+                                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                                    }`}
+                                onClick={() => setStatusFilter("active")}
+                            >
+                                Active ({activeStudents})
+                            </button>
+                            <button
+                                type="button"
+                                className={`rounded-lg border px-3 py-1 text-xs font-semibold transition ${statusFilter === "inactive"
+                                    ? "border-amber-600 bg-amber-600 text-white"
+                                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                                    }`}
+                                onClick={() => setStatusFilter("inactive")}
+                            >
+                                Inactive ({inactiveStudents})
+                            </button>
+                            <button
+                                type="button"
+                                className={`rounded-lg border px-3 py-1 text-xs font-semibold transition ${statusFilter === "all"
+                                    ? "border-indigo-600 bg-indigo-600 text-white"
+                                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                                    }`}
+                                onClick={() => setStatusFilter("all")}
+                            >
+                                All ({students.length})
+                            </button>
+                        </div>
                     </div>
                     <button
                         type="button"
@@ -227,7 +334,7 @@ export default function StudentsPage() {
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                     {isLoading && <LoadingState label="Loading student table..." />}
                     {!isLoading && error && <ErrorState label={error} />}
-                    {!isLoading && !error && <DataTable columns={columns} rows={students} emptyText="No students found" />}
+                    {!isLoading && !error && <DataTable columns={columns} rows={visibleStudents} emptyText="No students found" />}
                 </div>
             </section>
 
@@ -308,6 +415,38 @@ export default function StudentsPage() {
                     </button>
                 </form>
             </Modal>
+
+            <ConfirmDialog
+                open={Boolean(pendingDeleteStudent)}
+                title={
+                    pendingAction === "restore"
+                        ? "Restore Student"
+                        : pendingAction === "hard-delete"
+                            ? "Delete Student Permanently"
+                            : "Deactivate Student"
+                }
+                message={
+                    pendingAction === "restore"
+                        ? `Restore ${pendingDeleteStudent?.student_code ?? pendingDeleteStudent?.name ?? "this student"} back to active list?`
+                        : pendingAction === "hard-delete"
+                            ? `Permanently delete ${pendingDeleteStudent?.student_code ?? pendingDeleteStudent?.name ?? "this student"}? This will remove related data and cannot be undone.`
+                            : `Deactivate ${pendingDeleteStudent?.student_code ?? pendingDeleteStudent?.name ?? "this student"}? This student will be hidden from active list.`
+                }
+                onConfirm={onConfirmDeleteStudent}
+                onClose={() => {
+                    if (!isDeleting) {
+                        setPendingDeleteStudent(null);
+                    }
+                }}
+                confirmText={
+                    pendingAction === "restore"
+                        ? "Restore Student"
+                        : pendingAction === "hard-delete"
+                            ? "Delete Permanently"
+                            : "Deactivate Student"
+                }
+                isLoading={isDeleting}
+            />
         </main>
     );
 }

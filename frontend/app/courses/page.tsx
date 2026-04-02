@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BookCopy, Layers3, Plus, SquareUserRound, Pencil, Trash2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { ErrorState, LoadingState } from "@/components/ui/States";
@@ -10,8 +11,8 @@ import { courseService } from "@/services/course.service";
 import type { CourseItem, CreateCoursePayload } from "@/types/models";
 
 export default function CoursesPage() {
-    const canUpdateCourse = false;
-    const canDeleteCourse = false;
+    const canUpdateCourse = true;
+    const canDeleteCourse = true;
 
     const [courses, setCourses] = useState<CourseItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -19,7 +20,9 @@ export default function CoursesPage() {
     const [modalError, setModalError] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [editingCourseId, setEditingCourseId] = useState<number | null>(null);
+    const [pendingDeleteCourse, setPendingDeleteCourse] = useState<CourseItem | null>(null);
 
     const [form, setForm] = useState<CreateCoursePayload>({
         course_code: "",
@@ -65,8 +68,7 @@ export default function CoursesPage() {
         try {
             setIsCreating(true);
             if (editingCourseId) {
-                setModalError("Current backend does not support updating course classes yet.");
-                return;
+                await courseService.update(editingCourseId, form);
             } else {
                 await courseService.create(form);
             }
@@ -82,32 +84,35 @@ export default function CoursesPage() {
         }
     }
 
-    async function onDeleteCourse(item: CourseItem) {
+    function onDeleteCourse(item: CourseItem) {
         if (!canDeleteCourse) {
             setError("Current backend does not support deleting course classes yet.");
             return;
         }
 
-        const accepted = window.confirm(`Delete course class ${item.course_code ?? item.id}?`);
-        if (!accepted) {
+        setPendingDeleteCourse(item);
+    }
+
+    async function onConfirmDeleteCourse() {
+        if (!pendingDeleteCourse) {
             return;
         }
 
         try {
-            await courseService.remove(item.id);
+            setIsDeleting(true);
+            setError(null);
+            await courseService.remove(pendingDeleteCourse.id);
+            setPendingDeleteCourse(null);
             await loadCourses();
         } catch (err) {
             const message = err instanceof Error ? err.message : "Cannot delete course class";
             setError(message);
+        } finally {
+            setIsDeleting(false);
         }
     }
 
     function onEditCourse(item: CourseItem) {
-        if (!canUpdateCourse) {
-            setError("Current backend does not support editing course classes yet.");
-            return;
-        }
-
         setModalError(null);
         setEditingCourseId(item.id);
         setForm({
@@ -147,7 +152,7 @@ export default function CoursesPage() {
                 ),
             },
         ],
-        [],
+        [canUpdateCourse],
     );
 
     const totalCourses = courses.length;
@@ -271,6 +276,20 @@ export default function CoursesPage() {
                     </button>
                 </form>
             </Modal>
+
+            <ConfirmDialog
+                open={Boolean(pendingDeleteCourse)}
+                title="Delete Course Class"
+                message={`Are you sure you want to delete ${pendingDeleteCourse?.course_code ?? `Course #${pendingDeleteCourse?.id ?? ""}`}?`}
+                onConfirm={onConfirmDeleteCourse}
+                onClose={() => {
+                    if (!isDeleting) {
+                        setPendingDeleteCourse(null);
+                    }
+                }}
+                confirmText="Delete Course Class"
+                isLoading={isDeleting}
+            />
         </main>
     );
 }

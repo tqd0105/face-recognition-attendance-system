@@ -40,6 +40,11 @@ type SessionCreateResponse = {
   data?: SessionApiResponse;
 };
 
+type SessionListResponse = {
+  message?: string;
+  data?: SessionApiResponse[];
+};
+
 function normalizeSession(data: SessionApiResponse): Session {
   const startTime = data.start_time ?? "";
   const endTime = data.end_time ?? "";
@@ -69,9 +74,18 @@ export const sessionService = {
   },
 
   async getByCourseId(courseId: number): Promise<Session[]> {
-    const { data } = await http.get<SessionApiResponse[]>(`/api/sessions/${courseId}`);
-    const normalized = Array.isArray(data) ? data.map((item) => normalizeSession(item)) : [];
-    return normalized;
+    try {
+      const { data } = await http.get<SessionApiResponse[] | SessionListResponse>("/api/sessions", {
+        params: { course_class_id: courseId },
+      });
+
+      const source = Array.isArray(data) ? data : data?.data;
+      return Array.isArray(source) ? source.map((item) => normalizeSession(item)) : [];
+    } catch {
+      const { data } = await http.get<SessionApiResponse[]>(`/api/sessions/${courseId}`);
+      const normalized = Array.isArray(data) ? data.map((item) => normalizeSession(item)) : [];
+      return normalized;
+    }
   },
 
   async getAll(courseIds: number[]): Promise<Session[]> {
@@ -161,10 +175,16 @@ export const sessionService = {
     };
 
     try {
-      const { data } = await http.put<SessionCreateResponse | SessionApiResponse>(`/api/sessions/item/${id}`, normalizedPayload);
+      const { data } = await http.put<SessionCreateResponse | SessionApiResponse>(`/api/sessions/${id}`, normalizedPayload);
       const payloadData = (data as SessionCreateResponse)?.data ?? (data as SessionApiResponse);
       return normalizeSession(payloadData);
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        const { data } = await http.put<SessionCreateResponse | SessionApiResponse>(`/api/sessions/item/${id}`, normalizedPayload);
+        const payloadData = (data as SessionCreateResponse)?.data ?? (data as SessionApiResponse);
+        return normalizeSession(payloadData);
+      }
+
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
         (axiosError?.response?.data as { message?: string; error?: string } | undefined)?.message ||
@@ -180,8 +200,13 @@ export const sessionService = {
 
   async remove(id: number): Promise<void> {
     try {
-      await http.delete(`/api/sessions/item/${id}`);
+      await http.delete(`/api/sessions/${id}`);
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        await http.delete(`/api/sessions/item/${id}`);
+        return;
+      }
+
       const axiosError = axios.isAxiosError(error) ? error : null;
       const apiMessage =
         (axiosError?.response?.data as { message?: string; error?: string } | undefined)?.message ||
@@ -193,5 +218,17 @@ export const sessionService = {
       const status = axiosError?.response?.status;
       throw new Error(status ? `Cannot delete session (HTTP ${status})` : "Cannot delete session");
     }
+  },
+
+  async start(id: number): Promise<Session> {
+    const { data } = await http.patch<SessionCreateResponse | SessionApiResponse>(`/api/sessions/${id}/start`);
+    const payload = (data as SessionCreateResponse)?.data ?? (data as SessionApiResponse);
+    return normalizeSession(payload);
+  },
+
+  async stop(id: number): Promise<Session> {
+    const { data } = await http.patch<SessionCreateResponse | SessionApiResponse>(`/api/sessions/${id}/stop`);
+    const payload = (data as SessionCreateResponse)?.data ?? (data as SessionApiResponse);
+    return normalizeSession(payload);
   },
 };
