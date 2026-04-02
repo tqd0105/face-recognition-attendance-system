@@ -1,16 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { getSessionsByCourse, createSession } = require('../controllers/sessionController');
+const { getSessions, createSession, startSession, stopSession } = require('../controllers/sessionController');
 const { protect } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
-// POST: Tạo buổi học mới
 router.route('/')
-  .post(createSession);
+	.get(getSessions)
+	.post(createSession);
 
-// GET: Lấy danh sách buổi học theo course_id
-router.route('/:course_id')
-  .get(getSessionsByCourse);
+router.patch('/:id/start', startSession);
+router.patch('/:id/stop', stopSession);
 
 module.exports = router;
