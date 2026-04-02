@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ShieldAlert, UserRound, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ShieldAlert, X } from "lucide-react";
 import { WebcamIcons } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
+import { biometricService } from "@/services/biometric.service";
 import { classService } from "@/services/class.service";
 import { studentService } from "@/services/student.service";
 import type { ClassItem, Student } from "@/types/models";
@@ -18,6 +19,7 @@ export default function EnrollmentPage() {
 
     const [studentCode, setStudentCode] = useState("");
     const [studentName, setStudentName] = useState("");
+    const [selectedStudentId, setSelectedStudentId] = useState("");
     const [homeClassCode, setHomeClassCode] = useState("");
     const [students, setStudents] = useState<Student[]>([]);
     const [homeClasses, setHomeClasses] = useState<ClassItem[]>([]);
@@ -25,6 +27,8 @@ export default function EnrollmentPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const [isFocusMode, setIsFocusMode] = useState(false);
+    const [isCheckingFaceStatus, setIsCheckingFaceStatus] = useState(false);
+    const [hasFaceEnrolled, setHasFaceEnrolled] = useState<boolean | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -96,6 +100,77 @@ export default function EnrollmentPage() {
         return map;
     }, [homeClasses]);
 
+    const classIdToCodeMap = useMemo(() => {
+        const map = new Map<number, string>();
+        homeClasses.forEach((item) => {
+            if (item.id && item.class_code) {
+                map.set(Number(item.id), item.class_code);
+            }
+        });
+        return map;
+    }, [homeClasses]);
+
+    const sortedStudents = useMemo(() => {
+        return [...students].sort((a, b) => {
+            const left = (a.student_code ?? a.name ?? "").toLowerCase();
+            const right = (b.student_code ?? b.name ?? "").toLowerCase();
+            return left.localeCompare(right);
+        });
+    }, [students]);
+
+    function onSelectStudent(studentId: string) {
+        setSelectedStudentId(studentId);
+        if (!studentId) {
+            setStudentCode("");
+            setStudentName("");
+            setHomeClassCode("");
+            setHasFaceEnrolled(null);
+            return;
+        }
+
+        const picked = students.find((item) => String(item.id) === studentId);
+        if (!picked) {
+            return;
+        }
+
+        setStudentCode(picked.student_code ?? "");
+        setStudentName(picked.name ?? "");
+
+        const classId = Number(picked.home_class_id ?? picked.class_id ?? 0);
+        if (classId > 0) {
+            setHomeClassCode(classIdToCodeMap.get(classId) ?? "");
+        } else {
+            setHomeClassCode("");
+        }
+    }
+
+    useEffect(() => {
+        async function checkFaceStatus() {
+            if (!selectedStudentId) {
+                setHasFaceEnrolled(null);
+                return;
+            }
+
+            const studentId = Number(selectedStudentId);
+            if (!Number.isFinite(studentId) || studentId <= 0) {
+                setHasFaceEnrolled(null);
+                return;
+            }
+
+            try {
+                setIsCheckingFaceStatus(true);
+                const result = await biometricService.checkEnrollment(studentId);
+                setHasFaceEnrolled(result.hasFaceData);
+            } catch {
+                setHasFaceEnrolled(null);
+            } finally {
+                setIsCheckingFaceStatus(false);
+            }
+        }
+
+        void checkFaceStatus();
+    }, [selectedStudentId]);
+
     useEffect(() => {
         if (!videoRef.current || !streamRef.current) {
             return;
@@ -107,6 +182,31 @@ export default function EnrollmentPage() {
         });
     }, [isFocusMode]);
 
+    async function captureFaceSnapshot(): Promise<Blob | null> {
+        const video = videoRef.current;
+        if (!video) {
+            return null;
+        }
+
+        const width = video.videoWidth || 1280;
+        const height = video.videoHeight || 720;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext("2d");
+        if (!context) {
+            return null;
+        }
+
+        context.drawImage(video, 0, 0, width, height);
+
+        return await new Promise<Blob | null>((resolve) => {
+            canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.92);
+        });
+    }
+
     async function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
 
@@ -115,8 +215,13 @@ export default function EnrollmentPage() {
             return;
         }
 
-        if (!studentCode.trim() || !studentName.trim()) {
-            setNotice("Please enter student code and student name.");
+        if (!selectedStudentId) {
+            setNotice("Please select a student from the list.");
+            return;
+        }
+
+        if (!isCameraReady) {
+            setNotice("Camera is not ready. Please allow camera permission and try again.");
             return;
         }
 
@@ -127,27 +232,45 @@ export default function EnrollmentPage() {
             return;
         }
 
-        const normalizedCode = studentCode.trim().toLowerCase();
-        const normalizedName = studentName.trim();
-        const matchedStudent = students.find((item) => item.student_code?.trim().toLowerCase() === normalizedCode);
+        const matchedStudent = students.find((item) => String(item.id) === selectedStudentId);
 
         try {
             setIsSubmitting(true);
             setNotice(null);
             if (matchedStudent) {
-                await studentService.update(matchedStudent.id, {
-                    student_code: studentCode.trim(),
-                    name: normalizedName,
-                    home_class_id: resolvedHomeClassId,
-                });
-                setNotice("Student already exists. Updated information and continued enrollment.");
+                const currentClassId = Number(matchedStudent.home_class_id ?? matchedStudent.class_id ?? 0) || undefined;
+                const shouldUpdateProfile = currentClassId !== resolvedHomeClassId;
+
+                if (shouldUpdateProfile) {
+                    const resolvedEmail = matchedStudent.email?.trim();
+                    if (!resolvedEmail) {
+                        setNotice("Selected student has no email. Please update email in Student Management first.");
+                        return;
+                    }
+
+                    const normalizedName = matchedStudent.name?.trim() || studentName.trim();
+                    await studentService.update(matchedStudent.id, {
+                        student_code: matchedStudent.student_code?.trim() || studentCode.trim(),
+                        name: normalizedName,
+                        email: resolvedEmail,
+                        home_class_id: resolvedHomeClassId,
+                    });
+                }
+
+                const imageBlob = await captureFaceSnapshot();
+                if (!imageBlob) {
+                    setNotice("Cannot capture face image from camera. Please retry.");
+                    return;
+                }
+
+                const fileBase = matchedStudent.student_code?.trim() || `student-${matchedStudent.id}`;
+                await biometricService.enroll(matchedStudent.id, imageBlob, `${fileBase}-${Date.now()}.jpg`);
+
+                setHasFaceEnrolled(true);
+                setNotice("Face enrollment successful.");
             } else {
-                await studentService.create({
-                    student_code: studentCode.trim(),
-                    name: normalizedName,
-                    home_class_id: resolvedHomeClassId,
-                });
-                setNotice("Enrollment success.");
+                setNotice("Selected student was not found. Please reload and try again.");
+                return;
             }
 
             try {
@@ -158,6 +281,7 @@ export default function EnrollmentPage() {
             }
             setStudentCode("");
             setStudentName("");
+            setSelectedStudentId("");
             setHomeClassCode("");
         } catch (err) {
             const message = err instanceof Error ? err.message : "Enrollment failed";
@@ -205,34 +329,58 @@ export default function EnrollmentPage() {
 
                     <form className="motion-hero grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm" onSubmit={onSubmit}>
                         <div>
-                            <label className="text-sm font-semibold text-slate-700" htmlFor="student-code">
-                                Student Code
+                            <label className="text-sm font-semibold text-slate-700" htmlFor="student-select">
+                                Student
                             </label>
-                            <div className="relative mt-1">
-                                <UserRound className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                                <input
-                                    id="student-code"
-                                    className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                                    value={studentCode}
-                                    onChange={(e) => setStudentCode(e.target.value)}
-                                    placeholder="e.g. B21DCCN001"
-                                    autoComplete="off"
-                                />
-                            </div>
+                            <select
+                                id="student-select"
+                                className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                value={selectedStudentId}
+                                onChange={(e) => onSelectStudent(e.target.value)}
+                            >
+                                <option value="">Select student</option>
+                                {sortedStudents.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                        {item.student_code ?? `Student #${item.id}`} - {item.name}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         <div>
-                            <label className="text-sm font-semibold text-slate-700" htmlFor="student-name">
+                            <label className="text-sm font-semibold text-slate-700" htmlFor="student-name-preview">
                                 Student Name
                             </label>
                             <input
-                                id="student-name"
+                                id="student-name-preview"
                                 className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 value={studentName}
-                                onChange={(e) => setStudentName(e.target.value)}
-                                placeholder="e.g. Nguyen Van A"
-                                autoComplete="off"
+                                readOnly
+                                placeholder="Choose student to view"
                             />
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700">Face Status</p>
+                            <div className="mt-1">
+                                {isCheckingFaceStatus ? (
+                                    <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                        Checking...
+                                    </span>
+                                ) : hasFaceEnrolled === true ? (
+                                    <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                        Enrolled
+                                    </span>
+                                ) : hasFaceEnrolled === false ? (
+                                    <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                                        Not Enrolled
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                        Unknown
+                                    </span>
+                                )}
+                            </div>
                         </div>
 
                         <div>
@@ -258,11 +406,11 @@ export default function EnrollmentPage() {
                             <button
                                 className="interactive-btn inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
                                 data-role={hasEnrollmentAccess ? "teacher" : user.role}
-                                disabled={isSubmitting || !hasEnrollmentAccess}
+                                disabled={isSubmitting || !hasEnrollmentAccess || !isCameraReady}
                                 type="submit"
                             >
                                 <CheckCircle2 className="h-5 w-5" />
-                                {isSubmitting ? "Submitting..." : "Capture & Enroll"}
+                                {isSubmitting ? "Submitting..." : "Capture and Enroll"}
                             </button>
 
                             <button
@@ -294,6 +442,10 @@ export default function EnrollmentPage() {
                         {notice}
                     </div>
                 )}
+
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+                    Enrollment uses current camera frame and uploads directly to biometrics API.
+                </div>
             </section>
 
             {isFocusMode && (
@@ -326,14 +478,21 @@ export default function EnrollmentPage() {
                             <form className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3" onSubmit={onSubmit}>
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700" htmlFor="student-code-focus">
-                                        Student Code
+                                        Student
                                     </label>
-                                    <input
+                                    <select
                                         id="student-code-focus"
                                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                                        value={studentCode}
-                                        onChange={(e) => setStudentCode(e.target.value)}
-                                    />
+                                        value={selectedStudentId}
+                                        onChange={(e) => onSelectStudent(e.target.value)}
+                                    >
+                                        <option value="">Select student</option>
+                                        {sortedStudents.map((item) => (
+                                            <option key={item.id} value={item.id}>
+                                                {item.student_code ?? `Student #${item.id}`} - {item.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700" htmlFor="student-name-focus">
@@ -343,8 +502,31 @@ export default function EnrollmentPage() {
                                         id="student-name-focus"
                                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                         value={studentName}
-                                        onChange={(e) => setStudentName(e.target.value)}
+                                        readOnly
+                                        placeholder="Choose student to view"
                                     />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-700">Face Status</p>
+                                    <div className="mt-1">
+                                        {isCheckingFaceStatus ? (
+                                            <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                                Checking...
+                                            </span>
+                                        ) : hasFaceEnrolled === true ? (
+                                            <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                                Enrolled
+                                            </span>
+                                        ) : hasFaceEnrolled === false ? (
+                                            <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                                                Not Enrolled
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                                Unknown
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-code-focus">
@@ -366,11 +548,11 @@ export default function EnrollmentPage() {
                                 </div>
                                 <button
                                     className="interactive-btn inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
-                                    disabled={isSubmitting || !hasEnrollmentAccess}
+                                    disabled={isSubmitting || !hasEnrollmentAccess || !isCameraReady}
                                     type="submit"
                                 >
                                     <CheckCircle2 className="h-5 w-5" />
-                                    {isSubmitting ? "Submitting..." : "Capture & Enroll"}
+                                    {isSubmitting ? "Submitting..." : "Capture and Enroll"}
                                 </button>
                             </form>
                         </div>

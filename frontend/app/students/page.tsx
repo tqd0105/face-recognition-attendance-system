@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Users, Mail, BadgeCheck, Pencil, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
@@ -26,7 +26,7 @@ export default function StudentsPage() {
         email: "",
     });
 
-    async function loadStudents() {
+    const loadStudents = useCallback(async () => {
         try {
             setIsLoading(true);
             setError(null);
@@ -38,7 +38,7 @@ export default function StudentsPage() {
         } finally {
             setIsLoading(false);
         }
-    }
+    }, []);
 
     useEffect(() => {
         void loadStudents();
@@ -53,7 +53,7 @@ export default function StudentsPage() {
         }
 
         void loadHomeClasses();
-    }, []);
+    }, [loadStudents]);
 
     const homeClassCodeMap = useMemo(() => {
         return new Map(homeClasses.map((item) => [Number(item.id), item.class_code ?? `Class #${item.id}`]));
@@ -104,7 +104,7 @@ export default function StudentsPage() {
         }
     }
 
-    async function onDeleteStudent(student: Student) {
+    const onDeleteStudent = useCallback(async (student: Student) => {
         const accepted = window.confirm(`Delete student ${student.student_code ?? student.name}?`);
         if (!accepted) {
             return;
@@ -117,9 +117,9 @@ export default function StudentsPage() {
             const message = err instanceof Error ? err.message : "Cannot delete student";
             setError(message);
         }
-    }
+    }, [loadStudents]);
 
-    function onEditStudent(student: Student) {
+    const onEditStudent = useCallback((student: Student) => {
         setModalError(null);
         setEditingStudentId(student.id);
         setForm({
@@ -129,7 +129,7 @@ export default function StudentsPage() {
             home_class_id: student.home_class_id ?? student.class_id,
         });
         setIsModalOpen(true);
-    }
+    }, []);
 
     const columns = useMemo(
         () => [
@@ -171,7 +171,7 @@ export default function StudentsPage() {
                 ),
             },
         ],
-        [homeClassCodeMap],
+        [homeClassCodeMap, onDeleteStudent, onEditStudent],
     );
 
     const totalStudents = students.length;
@@ -272,16 +272,21 @@ export default function StudentsPage() {
                     </div>
                     <div>
                         <label className="text-sm font-semibold text-slate-700" htmlFor="student-home-class-id">
-                            Class ID
+                            Home Class
                         </label>
-                        <input
+                        <select
                             id="student-home-class-id"
-                            type="number"
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             value={form.home_class_id ?? ""}
                             onChange={(e) => setForm((prev) => ({ ...prev, home_class_id: e.target.value ? Number(e.target.value) : undefined }))}
-                            placeholder="e.g. 1"
-                        />
+                        >
+                            <option value="">No class</option>
+                            {homeClasses.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                    {item.class_code ?? `Class #${item.id}`} - {item.major ?? "Major"}
+                                </option>
+                            ))}
+                        </select>
                     </div>
                     <div>
                         <label className="text-sm font-semibold text-slate-700" htmlFor="student-email">
