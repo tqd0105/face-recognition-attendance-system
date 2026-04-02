@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const {getCourseClasses, getCourseClassById, createCourseClass, enrollStudents, getEnrolledStudents} = require('../controllers/courseController');
-const {protect} = require('../middlewares/authMiddleware');
+const { getCourseClasses, getCourseClassById, createCourseClass, updateCourseClass, enrollStudents, getEnrolledStudents, deleteCourseClass } = require('../controllers/courseController');
+const { protect } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
@@ -10,7 +10,9 @@ router.route('/')
     .post(createCourseClass);
 
 router.route('/:id')
-    .get(getCourseClassById);
+    .get(getCourseClassById)
+    .put(updateCourseClass)
+    .delete(deleteCourseClass);
 
 router.route('/:id/enroll')
     .post(enrollStudents);

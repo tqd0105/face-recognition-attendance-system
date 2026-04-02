@@ -4,7 +4,7 @@ const pool = require('../config/db');
 // @route   GET /api/students
 // @access  Private
 exports.getStudents = async (req, res) => {
-    const {class_id} = req.query;
+    const { class_id } = req.query;
 
     try {
         let query = `
@@ -129,5 +129,61 @@ exports.deleteStudent = async (req, res) => {
     } catch (error) {
         console.error(error.message);
         res.status(500).json({ message: 'Lỗi server khi xóa sinh viên' });
+    }
+};
+
+// @desc    Khôi phục sinh viên đã soft delete (status = active)
+// @route   PATCH /api/students/:id/restore
+// @access  Private
+exports.restoreStudent = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const restoredStudent = await pool.query(
+            `UPDATE Student
+             SET status = 'active', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 RETURNING *`,
+            [id]
+        );
+
+        if (restoredStudent.rows.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy sinh viên để khôi phục!' });
+        }
+
+        res.status(200).json({
+            message: 'Khôi phục sinh viên thành công!',
+            data: restoredStudent.rows[0]
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Lỗi server khi khôi phục sinh viên' });
+    }
+};
+
+// @desc    Xóa vĩnh viễn sinh viên (Hard delete)
+// @route   DELETE /api/students/:id/permanent
+// @access  Private
+exports.hardDeleteStudent = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const deletedStudent = await pool.query(
+            `DELETE FROM Student
+             WHERE id = $1
+             RETURNING id, student_code, name`,
+            [id]
+        );
+
+        if (deletedStudent.rows.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy sinh viên để xóa vĩnh viễn!' });
+        }
+
+        return res.status(200).json({
+            message: 'Đã xóa vĩnh viễn sinh viên thành công!',
+            data: deletedStudent.rows[0],
+        });
+    } catch (error) {
+        console.error(error.message);
+        return res.status(500).json({ message: 'Lỗi server khi xóa vĩnh viễn sinh viên' });
     }
 };

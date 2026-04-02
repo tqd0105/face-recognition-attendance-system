@@ -15,10 +15,11 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json()); // Cho phép backend đọc được data JSON từ Frontend gửi lên
+app.use(express.json({ limit: '8mb' })); // Cho phép nhận frame base64 từ realtime recognition
+app.use(express.urlencoded({ limit: '8mb', extended: true }));
 
 // Connect with Route
-app.use('/api/auth', authRoutes); 
+app.use('/api/auth', authRoutes);
 
 // API Test thử
 app.get('/', (req, res) => {

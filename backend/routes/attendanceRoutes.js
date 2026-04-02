@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { 
-    checkIn, 
-    getAttendanceBySession, 
-    updateAttendanceStatus, 
-    getAttendanceReport, 
-    getStudentAttendanceHistory, 
-    manualCheckIn, 
+const {
+    checkIn,
+    recognizeRealtime,
+    checkInOneFace,
+    getAttendanceBySession,
+    updateAttendanceStatus,
+    getAttendanceReport,
+    getStudentAttendanceHistory,
+    manualCheckIn,
     updateAttendanceById
 } = require('../controllers/attendanceController');
 const { protect } = require('../middlewares/authMiddleware');
@@ -14,6 +16,8 @@ const { protect } = require('../middlewares/authMiddleware');
 router.use(protect);
 
 router.post('/check-in', checkIn);
+router.post('/check-in-one-face', checkInOneFace);
+router.post('/recognize', recognizeRealtime);
 router.post('/manual', manualCheckIn)
 
 router.get('/session/:session_id', getAttendanceBySession);

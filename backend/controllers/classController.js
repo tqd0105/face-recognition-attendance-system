@@ -5,7 +5,7 @@ const pool = require('../config/db');
 // @access  Private (Chỉ Giảng viên đã đăng nhập mới được xem) (Có hỗ trợ phân trang và lọc)
 exports.getClass = async (req, res) => {
     try {
-        const {page = 1, limit = 10, department, major} = req.query;
+        const { page = 1, limit = 10, department, major } = req.query;
 
         const pageNum = parseInt(page, 10);
         const limitNum = parseInt(limit, 10);
@@ -71,15 +71,15 @@ exports.getClass = async (req, res) => {
 // @route   POST /api/home-classes
 // @access  Private
 exports.createClass = async (req, res) => {
-    const {class_code, major, department} = req.body;
+    const { class_code, major, department } = req.body;
 
     try {
         // 1. Kiểm tra xem mã lớp đã bị trùng
         const checkExist = await pool.query('SELECT * FROM Home_class WHERE class_code = $1', [class_code]);
-        if(checkExist.rows.length > 0) {
-            return res.status(400).json({message: 'Mã lớp này đã tồn tại trong hệ thống!'});
+        if (checkExist.rows.length > 0) {
+            return res.status(400).json({ message: 'Mã lớp này đã tồn tại trong hệ thống!' });
         }
-        
+
         // 2. Thêm lớp mới vào DB
         const newClass = await pool.query(
             'INSERT INTO Home_class (class_code, major, department) VALUES ($1, $2, $3) RETURNING *',
@@ -93,5 +93,70 @@ exports.createClass = async (req, res) => {
     } catch (error) {
         console.error(error.message);
         res.status(500).json({ message: 'Lỗi server khi tạo lớp mới' });
+    }
+};
+
+// @desc    Cập nhật lớp sinh hoạt
+// @route   PUT /api/home-classes/:id
+// @access  Private
+exports.updateClass = async (req, res) => {
+    const { id } = req.params;
+    const { class_code, major, department } = req.body;
+
+    try {
+        const checkExist = await pool.query(
+            'SELECT * FROM Home_class WHERE class_code = $1 AND id != $2',
+            [class_code, id]
+        );
+
+        if (checkExist.rows.length > 0) {
+            return res.status(400).json({ message: 'Mã lớp này đã tồn tại trong hệ thống!' });
+        }
+
+        const updated = await pool.query(
+            `UPDATE Home_class
+             SET class_code = $1, major = $2, department = $3
+             WHERE id = $4
+             RETURNING *`,
+            [class_code, major, department, id]
+        );
+
+        if (updated.rows.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy lớp sinh hoạt để cập nhật!' });
+        }
+
+        return res.status(200).json({
+            message: 'Cập nhật lớp sinh hoạt thành công!',
+            data: updated.rows[0],
+        });
+    } catch (error) {
+        console.error(error.message);
+        return res.status(500).json({ message: 'Lỗi server khi cập nhật lớp sinh hoạt' });
+    }
+};
+
+// @desc    Xóa lớp sinh hoạt
+// @route   DELETE /api/home-classes/:id
+// @access  Private
+exports.deleteClass = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const deleted = await pool.query(
+            `DELETE FROM Home_class WHERE id = $1 RETURNING *`,
+            [id]
+        );
+
+        if (deleted.rows.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy lớp sinh hoạt để xóa!' });
+        }
+
+        return res.status(200).json({
+            message: 'Xóa lớp sinh hoạt thành công!',
+            data: deleted.rows[0],
+        });
+    } catch (error) {
+        console.error(error.message);
+        return res.status(500).json({ message: 'Lỗi server khi xóa lớp sinh hoạt' });
     }
 };
