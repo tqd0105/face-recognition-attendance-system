@@ -57,13 +57,13 @@ exports.getSessions = async (req, res) => {
 // @route   POST /api/sessions
 // @access  Private
 exports.createSession = async (req, res) => {
-	const { course_class_id, session_date, start_time, end_time } = req.body;
+	const { course_class_id, session_date, start_time, end_time, status } = req.body;
 
 	try {
 		const newSession = await pool.query(
-			`INSERT INTO Session (course_class_id, session_date, start_time, end_time) 
-						VALUES ($1, $2, $3, $4) RETURNING *`,
-			[course_class_id, session_date, start_time, end_time]
+			`INSERT INTO Session (course_class_id, session_date, start_time, end_time, status) 
+						VALUES ($1, $2, $3, $4, COALESCE($5::session_status, 'scheduled'::session_status)) RETURNING *`,
+			[course_class_id, session_date, start_time, end_time, status]
 		);
 
 		res.status(201).json({
@@ -87,9 +87,18 @@ exports.updateSession = async (req, res) => {
 	const { course_class_id, session_date, start_time, end_time, status } = req.body;
 
 	try {
-		const existing = await pool.query('SELECT id FROM Session WHERE id = $1', [id]);
+		const existing = await pool.query('SELECT id, status FROM Session WHERE id = $1', [id]);
 		if (existing.rows.length === 0) {
 			return res.status(404).json({ message: 'Session not found for update!' });
+		}
+
+		const currentStatus = existing.rows[0]?.status;
+		if (status && currentStatus === 'completed' && status !== 'completed') {
+			return res.status(400).json({ message: 'Completed session cannot be changed to another status.' });
+		}
+
+		if (status && currentStatus === 'canceled' && status !== 'canceled') {
+			return res.status(400).json({ message: 'Canceled session cannot be changed to another status.' });
 		}
 
 		const updated = await pool.query(
@@ -98,7 +107,7 @@ exports.updateSession = async (req, res) => {
 			     session_date = $2,
 			     start_time = $3,
 			     end_time = $4,
-			     status = COALESCE($5, status)
+			     status = COALESCE($5::session_status, status)
 			 WHERE id = $6
 			 RETURNING *`,
 			[course_class_id, session_date, start_time, end_time, status, id]
@@ -128,6 +137,15 @@ exports.startSession = async (req, res) => {
 			return res.status(404).json({ message: 'Session not found!' });
 		}
 
+		if (sessionCheck.rows[0].status === 'active') {
+			return res.status(400).json({ message: 'Session is already active.' });
+		}
+
+		const endDateTime = new Date(`${sessionCheck.rows[0].session_date}T${sessionCheck.rows[0].end_time}`);
+		if (!Number.isNaN(endDateTime.getTime()) && endDateTime.getTime() <= Date.now()) {
+			return res.status(400).json({ message: 'This session has already passed its end time.' });
+		}
+
 		const courseClassId = sessionCheck.rows[0].course_class_id;
 
 		const vectorQuery = `
@@ -137,10 +155,32 @@ exports.startSession = async (req, res) => {
             JOIN Face_embeddings f ON s.id = f.student_id
             WHERE e.course_class_id = $1
 		`;
-		const vectorResult = await pool.query(vectorQuery, [courseClassId]);
+		let vectorResult = await pool.query(vectorQuery, [courseClassId]);
 
 		if (vectorResult.rows.length === 0) {
-			return res.status(400).json({ message: 'No students in this class have enrolled face data yet!' });
+			const linkedHomeClass = await pool.query(
+				'SELECT home_class_id FROM Course_classes WHERE id = $1',
+				[courseClassId]
+			);
+
+			const homeClassId = Number(linkedHomeClass.rows[0]?.home_class_id ?? 0);
+			if (Number.isFinite(homeClassId) && homeClassId > 0) {
+				await pool.query(
+					`INSERT INTO Enrollments (student_id, course_class_id)
+					 SELECT s.id, $1
+					 FROM Student s
+					 JOIN Face_embeddings f ON f.student_id = s.id
+					 WHERE s.home_class_id = $2
+					 ON CONFLICT DO NOTHING`,
+					[courseClassId, homeClassId]
+				);
+
+				vectorResult = await pool.query(vectorQuery, [courseClassId]);
+			}
+		}
+
+		if (vectorResult.rows.length === 0) {
+			return res.status(400).json({ message: 'No enrolled students with face data found. Please enroll students and complete Face Enrollment first.' });
 		}
 
 		const aiPayload = vectorResult.rows.map(row => ({
@@ -213,6 +253,50 @@ exports.stopSession = async (req, res) => {
 	} catch (error) {
 		console.error(error.message);
 		res.status(500).json({ message: 'Server error while stopping session' });
+	}
+};
+
+// @desc    Hủy buổi học
+// @route   PATCH /api/sessions/:id/cancel
+// @access  Private
+exports.cancelSession = async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const sessionCheck = await pool.query('SELECT * FROM Session WHERE id = $1', [id]);
+		if (sessionCheck.rows.length === 0) {
+			return res.status(404).json({ message: 'Session not found!' });
+		}
+
+		if (sessionCheck.rows[0].status === 'completed') {
+			return res.status(400).json({ message: 'Completed session cannot be canceled.' });
+		}
+
+		const updatedSession = await pool.query(
+			`UPDATE Session SET status = 'canceled' WHERE id = $1 RETURNING *`,
+			[id]
+		);
+
+		const { aiServiceUrl, aiServiceToken } = resolveAiConfig();
+		try {
+			await axios.post(`${aiServiceUrl}/ai/unload-embeddings`, {
+				session_id: String(id)
+			}, {
+				headers: {
+					'X-Service-Token': aiServiceToken,
+				},
+			});
+		} catch (aiError) {
+			console.error("AI Service error (unload embeddings cancel):", aiError.message);
+		}
+
+		return res.status(200).json({
+			message: 'Session canceled successfully!',
+			data: updatedSession.rows[0]
+		});
+	} catch (error) {
+		console.error(error.message);
+		return res.status(500).json({ message: 'Server error while canceling session' });
 	}
 };
 

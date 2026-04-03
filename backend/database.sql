@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS Course_classes (
     id SERIAL PRIMARY KEY,
     course_code VARCHAR(50) UNIQUE NOT NULL,
     course_name VARCHAR(100) NOT NULL,
+    home_class_id INTEGER REFERENCES Home_class(id) ON DELETE SET NULL,
     teacher_id INTEGER REFERENCES Teacher(id) ON DELETE SET NULL,
     semester VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
