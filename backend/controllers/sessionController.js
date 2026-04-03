@@ -149,11 +149,17 @@ exports.startSession = async (req, res) => {
 		const courseClassId = sessionCheck.rows[0].course_class_id;
 
 		const vectorQuery = `
-			SELECT s.id AS student_id, f.embedding 
-            FROM Enrollments e
-            JOIN Student s ON e.student_id = s.id
-            JOIN Face_embeddings f ON s.id = f.student_id
-            WHERE e.course_class_id = $1
+			SELECT s.id AS student_id, latest.embedding
+			FROM Enrollments e
+			JOIN Student s ON e.student_id = s.id
+			JOIN LATERAL (
+				SELECT f.embedding
+				FROM Face_embeddings f
+				WHERE f.student_id = s.id
+				ORDER BY f.created_at DESC
+				LIMIT 1
+			) latest ON TRUE
+			WHERE e.course_class_id = $1
 		`;
 		let vectorResult = await pool.query(vectorQuery, [courseClassId]);
 
@@ -169,8 +175,12 @@ exports.startSession = async (req, res) => {
 					`INSERT INTO Enrollments (student_id, course_class_id)
 					 SELECT s.id, $1
 					 FROM Student s
-					 JOIN Face_embeddings f ON f.student_id = s.id
 					 WHERE s.home_class_id = $2
+					   AND EXISTS (
+						   SELECT 1
+						   FROM Face_embeddings f
+						   WHERE f.student_id = s.id
+					   )
 					 ON CONFLICT DO NOTHING`,
 					[courseClassId, homeClassId]
 				);
