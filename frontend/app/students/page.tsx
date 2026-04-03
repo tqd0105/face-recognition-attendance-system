@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Users, Mail, BadgeCheck, Pencil, RotateCcw, Trash2, UserX, CalendarDays, Clock3, BookOpenText } from "lucide-react";
+import { Plus, Users, Mail, BadgeCheck, Pencil, RotateCcw, Trash2, UserX, CalendarDays, Clock3, BookOpenText, CheckCheckIcon, AlertTriangleIcon } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Modal } from "@/components/ui/Modal";
 import { ErrorState, LoadingState } from "@/components/ui/States";
 import { attendanceService } from "@/services/attendance.service";
+import { biometricService } from "@/services/biometric.service";
 import { classService } from "@/services/class.service";
 import { courseService } from "@/services/course.service";
 import { sessionService } from "@/services/session.service";
@@ -33,6 +34,16 @@ export default function StudentsPage() {
     const [historyModalStudent, setHistoryModalStudent] = useState<Student | null>(null);
     const [historyRows, setHistoryRows] = useState<StudentAttendanceHistoryItem[]>([]);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+    const [faceModalStudent, setFaceModalStudent] = useState<Student | null>(null);
+    const [faceRows, setFaceRows] = useState<Array<{ id: number; studentId: number; qualityScore?: number; createdAt?: string }>>([]);
+    const [isFaceLoading, setIsFaceLoading] = useState(false);
+    const [isFaceDeleting, setIsFaceDeleting] = useState(false);
+    const [faceError, setFaceError] = useState<string | null>(null);
+    const [pendingFaceDelete, setPendingFaceDelete] = useState<{
+        mode: "all" | "single";
+        student: Student;
+        enrollmentId?: number;
+    } | null>(null);
 
     const [form, setForm] = useState<CreateStudentPayload>({
         student_code: "",
@@ -244,6 +255,49 @@ export default function StudentsPage() {
         }
     }, []);
 
+    const openFaceModal = useCallback(async (student: Student) => {
+        setFaceModalStudent(student);
+        setFaceRows([]);
+        setFaceError(null);
+        setIsFaceLoading(true);
+        try {
+            const rows = await biometricService.getEnrollmentHistory(student.id);
+            setFaceRows(rows);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Cannot load face enrollment records";
+            setFaceError(message);
+            setFaceRows([]);
+        } finally {
+            setIsFaceLoading(false);
+        }
+    }, []);
+
+    const onConfirmFaceDelete = useCallback(async () => {
+        if (!pendingFaceDelete) {
+            return;
+        }
+
+        try {
+            setIsFaceDeleting(true);
+            setFaceError(null);
+
+            if (pendingFaceDelete.mode === "all") {
+                await biometricService.deleteAllEnrollments(pendingFaceDelete.student.id);
+            } else if (pendingFaceDelete.enrollmentId) {
+                await biometricService.deleteEnrollmentById(pendingFaceDelete.enrollmentId);
+            }
+
+            const refreshed = await biometricService.getEnrollmentHistory(pendingFaceDelete.student.id);
+            setFaceRows(refreshed);
+            setPendingFaceDelete(null);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Cannot delete face enrollment records";
+            setFaceError(message);
+        } finally {
+            setIsFaceDeleting(false);
+        }
+    }, [pendingFaceDelete]);
+
     function formatHistoryDateTime(value?: string): string {
         if (!value) {
             return "-";
@@ -338,54 +392,61 @@ export default function StudentsPage() {
                     >
                         <button
                             type="button"
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                            onClick={() => {
+                                void openFaceModal(row);
+                            }}
+                            title="Manage face enrollments"
+                            aria-label="Manage face enrollments"
+                        >
+                            <AlertTriangleIcon className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                            type="button"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
                             onClick={() => onEditStudent(row)}
                             title="Edit student"
                             aria-label="Edit student"
                         >
                             <Pencil className="h-3.5 w-3.5" />
-                            <span className="hidden 2xl:inline text-xs font-semibold">Edit</span>
                         </button>
                         {(row.status ?? "active") === "inactive" ? (
                             <>
                                 <button
                                     type="button"
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                                     onClick={() => onRestoreStudent(row)}
                                     title="Restore student"
                                     aria-label="Restore student"
                                 >
                                     <RotateCcw className="h-3.5 w-3.5" />
-                                    <span className="hidden 2xl:inline text-xs font-semibold">Restore</span>
                                 </button>
                                 <button
                                     type="button"
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
                                     onClick={() => onHardDeleteStudent(row)}
                                     title="Delete student permanently"
                                     aria-label="Delete student permanently"
                                 >
                                     <Trash2 className="h-3.5 w-3.5" />
-                                    <span className="hidden 2xl:inline text-xs font-semibold">Delete Permanently</span>
                                 </button>
                             </>
                         ) : (
                             <button
                                 type="button"
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
                                 onClick={() => onDeleteStudent(row)}
                                 title="Deactivate student"
                                 aria-label="Deactivate student"
                             >
                                 <UserX className="h-3.5 w-3.5" />
-                                <span className="hidden 2xl:inline text-xs font-semibold">Deactivate</span>
                             </button>
                         )}
                     </div>
                 ),
             },
         ],
-        [attendanceByStudent, homeClassCodeMap, onDeleteStudent, onEditStudent, onHardDeleteStudent, onRestoreStudent],
+        [attendanceByStudent, homeClassCodeMap, onDeleteStudent, onEditStudent, onHardDeleteStudent, onRestoreStudent, openFaceModal],
     );
 
     const totalStudents = students.length;
@@ -580,6 +641,81 @@ export default function StudentsPage() {
             </Modal>
 
             <Modal
+                open={Boolean(faceModalStudent)}
+                title={faceModalStudent ? `Face Records: ${faceModalStudent.name}` : "Face Records"}
+                onClose={() => {
+                    setFaceModalStudent(null);
+                    setFaceRows([]);
+                    setFaceError(null);
+                }}
+            >
+                <div className="grid gap-3">
+                    {faceError && (
+                        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
+                            {faceError}
+                        </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-700">
+                            Total records: <span className="text-slate-900">{faceRows.length}</span>
+                        </p>
+                        <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                            onClick={() => {
+                                if (!faceModalStudent) {
+                                    return;
+                                }
+                                setPendingFaceDelete({ mode: "all", student: faceModalStudent });
+                            }}
+                            disabled={!faceModalStudent || faceRows.length === 0 || isFaceLoading || isFaceDeleting}
+                        >
+                            Delete All Face Records
+                        </button>
+                    </div>
+
+                    {isFaceLoading ? (
+                        <LoadingState label="Loading face records..." />
+                    ) : faceRows.length === 0 ? (
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
+                            No face enrollment records for this student.
+                        </div>
+                    ) : (
+                        <ul className="grid gap-2">
+                            {faceRows.map((item, index) => (
+                                <li key={`${item.id}-${index}`} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                    <div>
+                                        <p className="text-sm font-semibold text-slate-800">
+                                            {item.createdAt ? formatHistoryDateTime(item.createdAt) : "Unknown time"}
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            Quality: {typeof item.qualityScore === "number" ? `${(item.qualityScore * 100).toFixed(1)}%` : "N/A"}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                        onClick={() => {
+                                            if (!faceModalStudent) {
+                                                return;
+                                            }
+                                            setPendingFaceDelete({ mode: "single", student: faceModalStudent, enrollmentId: item.id });
+                                        }}
+                                        title="Delete this face record"
+                                        aria-label="Delete this face record"
+                                        disabled={isFaceDeleting}
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            </Modal>
+
+            <Modal
                 open={isModalOpen}
                 title={editingStudentId ? "Edit Student" : "Add Student"}
                 onClose={() => {
@@ -687,6 +823,24 @@ export default function StudentsPage() {
                             : "Deactivate Student"
                 }
                 isLoading={isDeleting}
+            />
+
+            <ConfirmDialog
+                open={Boolean(pendingFaceDelete)}
+                title={pendingFaceDelete?.mode === "all" ? "Delete All Face Records" : "Delete Face Record"}
+                message={pendingFaceDelete?.mode === "all"
+                    ? `Delete all face enrollment records for ${pendingFaceDelete?.student.student_code ?? pendingFaceDelete?.student.name ?? "this student"}?`
+                    : `Delete selected face enrollment record for ${pendingFaceDelete?.student.student_code ?? pendingFaceDelete?.student.name ?? "this student"}?`}
+                onConfirm={() => {
+                    void onConfirmFaceDelete();
+                }}
+                onClose={() => {
+                    if (!isFaceDeleting) {
+                        setPendingFaceDelete(null);
+                    }
+                }}
+                confirmText={pendingFaceDelete?.mode === "all" ? "Delete All" : "Delete Record"}
+                isLoading={isFaceDeleting}
             />
         </main>
     );

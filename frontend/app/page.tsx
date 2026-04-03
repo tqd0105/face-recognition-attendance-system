@@ -33,7 +33,7 @@ type DashboardCard = {
 const cards: DashboardCard[] = [
     {
         title: "Face Enrollment",
-        description: "Capture and register student face profiles for attendance recognition.",
+        description: "Register student faces for automated attendance recognition.",
         href: "/enrollment",
         cta: "Open Enrollment",
         badge: "Core",
@@ -42,7 +42,7 @@ const cards: DashboardCard[] = [
     },
     {
         title: "Realtime Attendance",
-        description: "Monitor attendance events and run live session updates.",
+        description: "Start live sessions and track attendance in real time using face recognition.",
         href: "/attendance",
         cta: "Open Realtime",
         badge: "Live",
@@ -51,7 +51,7 @@ const cards: DashboardCard[] = [
     },
     {
         title: "Student Management",
-        description: "View student list and add new student records with modal form.",
+        description: "View, add, and manage student information and class enrollment.",
         href: "/students",
         cta: "Manage Students",
         badge: "Data",
@@ -60,7 +60,7 @@ const cards: DashboardCard[] = [
     },
     {
         title: "Home Class Management",
-        description: "Manage administrative home classes (class_code, major, department).",
+        description: "Manage administrative class structures, majors, and department mappings.",
         href: "/classes",
         cta: "Manage Home Classes",
         badge: "Academic",
@@ -69,7 +69,7 @@ const cards: DashboardCard[] = [
     },
     {
         title: "Course Class Management",
-        description: "Manage course classes used by sessions and realtime attendance.",
+        description: "Organize course classes for teaching schedules and attendance sessions.",
         href: "/courses",
         cta: "Manage Course",
         badge: "Teaching",
@@ -78,7 +78,7 @@ const cards: DashboardCard[] = [
     },
     {
         title: "Session Management",
-        description: "Create attendance sessions from course classes with DB-synced schedule.",
+        description: "Generate attendance sessions from course classes and synchronized schedules.",
         href: "/sessions",
         cta: "Manage Sessions",
         badge: "Schedule",
@@ -87,7 +87,7 @@ const cards: DashboardCard[] = [
     },
     {
         title: "Attendance History",
-        description: "Review posted attendance records with timeline and status.",
+        description: "Access attendance history, session timelines, and attendance status.",
         href: "/history",
         cta: "View History",
         badge: "Archive",
@@ -179,7 +179,7 @@ export default function DashboardPage() {
                         </div>
                         <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">Face Recognition Attendance System</p>
-                            <h1 className="text-3xl font-bold sm:text-4xl">Overview Functions </h1>
+                            <h1 className="text-2xl font-bold sm:text-4xl">Overview Functions </h1>
                         </div>
                     </div>
 
@@ -239,36 +239,40 @@ export default function DashboardPage() {
                 )}
 
                 <div className="motion-stagger mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {cards.map((card) => (
-                        <article
-                            key={card.href}
-                            className="interactive-card flex flex-col justify-between rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="">
-                                    {card.iconType === "symbol" ? (
-                                        <BadgeIcon name={card.icon} />
-                                    ) : (
-                                        <img src={card.icon} width={150} height={150} alt={card.title} />
-                                    )}
-                                </div>
-                                <div>
-                                    <h2 className="text-xl font-bold text-slate-900">{card.title}</h2>
-                                    <p className="mt-2 text-sm leading-6 text-slate-600">{card.description}</p>
-                                </div>
-                            </div>
+                    {cards.map((card, index) => {
+                        const isLastOddCard = cards.length % 2 === 1 && index === cards.length - 1;
 
-                            <div className="mt-5 flex items-center justify-between gap-2">
-                                <Link
-                                    href={card.href}
-                                    className="interactive-btn inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
-                                >
-                                    {card.cta}
-                                </Link>
-                                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{card.badge}</span>
-                            </div>
-                        </article>
-                    ))}
+                        return (
+                            <article
+                                key={card.href}
+                                className={`interactive-card flex flex-col justify-between rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm ${isLastOddCard ? "md:col-span-2 xl:col-span-1 xl:col-start-2" : ""}`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="">
+                                        {card.iconType === "symbol" ? (
+                                            <BadgeIcon name={card.icon} />
+                                        ) : (
+                                            <img src={card.icon} width={150} height={150} alt={card.title} />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-900">{card.title}</h2>
+                                        <p className="mt-2 text-sm leading-6 text-slate-600">{card.description}</p>
+                                    </div>
+                                </div>
+
+                                <div className="mt-5 flex items-center justify-between gap-2">
+                                    <Link
+                                        href={card.href}
+                                        className="interactive-btn inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                                    >
+                                        {card.cta}
+                                    </Link>
+                                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{card.badge}</span>
+                                </div>
+                            </article>
+                        );
+                    })}
                 </div>
 
                 {/* <div className="mt-5 flex flex-wrap gap-3">

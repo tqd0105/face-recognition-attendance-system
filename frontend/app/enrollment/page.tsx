@@ -10,6 +10,12 @@ import { classService } from "@/services/class.service";
 import { studentService } from "@/services/student.service";
 import type { ClassItem, Student } from "@/types/models";
 
+type EnrollmentHistoryItem = {
+    id: number;
+    qualityScore?: number;
+    createdAt?: string;
+};
+
 export default function EnrollmentPage() {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -30,6 +36,12 @@ export default function EnrollmentPage() {
     const [isCheckingFaceStatus, setIsCheckingFaceStatus] = useState(false);
     const [hasFaceEnrolled, setHasFaceEnrolled] = useState<boolean | null>(null);
     const [faceEnrolledAt, setFaceEnrolledAt] = useState<string | null>(null);
+    const [faceEnrollmentHistory, setFaceEnrollmentHistory] = useState<EnrollmentHistoryItem[]>([]);
+
+    const isSuccessNotice = Boolean(notice && /success|successful|completed/i.test(notice));
+    const noticeClassName = isSuccessNotice
+        ? "rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800"
+        : "rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800";
 
     useEffect(() => {
         let isMounted = true;
@@ -116,6 +128,7 @@ export default function EnrollmentPage() {
             setHomeClassCode("");
             setHasFaceEnrolled(null);
             setFaceEnrolledAt(null);
+            setFaceEnrollmentHistory([]);
             return;
         }
 
@@ -140,6 +153,7 @@ export default function EnrollmentPage() {
             if (!selectedStudentId) {
                 setHasFaceEnrolled(null);
                 setFaceEnrolledAt(null);
+                setFaceEnrollmentHistory([]);
                 return;
             }
 
@@ -147,17 +161,23 @@ export default function EnrollmentPage() {
             if (!Number.isFinite(studentId) || studentId <= 0) {
                 setHasFaceEnrolled(null);
                 setFaceEnrolledAt(null);
+                setFaceEnrollmentHistory([]);
                 return;
             }
 
             try {
                 setIsCheckingFaceStatus(true);
-                const result = await biometricService.checkEnrollment(studentId);
+                const [result, history] = await Promise.all([
+                    biometricService.checkEnrollment(studentId),
+                    biometricService.getEnrollmentHistory(studentId),
+                ]);
                 setHasFaceEnrolled(result.hasFaceData);
                 setFaceEnrolledAt(result.createdAt ?? null);
+                setFaceEnrollmentHistory(history);
             } catch {
                 setHasFaceEnrolled(null);
                 setFaceEnrolledAt(null);
+                setFaceEnrollmentHistory([]);
             } finally {
                 setIsCheckingFaceStatus(false);
             }
@@ -240,6 +260,9 @@ export default function EnrollmentPage() {
 
                 const fileBase = matchedStudent.student_code?.trim() || `student-${matchedStudent.id}`;
                 await biometricService.enroll(matchedStudent.id, imageBlob, `${fileBase}-${Date.now()}.jpg`);
+
+                const refreshedHistory = await biometricService.getEnrollmentHistory(matchedStudent.id);
+                setFaceEnrollmentHistory(refreshedHistory);
 
                 if ((matchedStudent.status ?? "active") !== "active") {
                     const resolvedEmail = matchedStudent.email?.trim();
@@ -382,11 +405,30 @@ export default function EnrollmentPage() {
                                     Last enrolled: {new Date(faceEnrolledAt).toLocaleString()}
                                 </p>
                             )}
+                            {selectedStudentId && (
+                                <div className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                        Enrollment History
+                                    </p>
+                                    {faceEnrollmentHistory.length === 0 ? (
+                                        <p className="mt-1 text-xs text-slate-500">No enrollment history yet.</p>
+                                    ) : (
+                                        <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                                            {faceEnrollmentHistory.slice(0, 5).map((item, index) => (
+                                                <li key={`${item.id}-${index}`}>
+                                                    {item.createdAt ? new Date(item.createdAt).toLocaleString() : "Unknown time"}
+                                                    {typeof item.qualityScore === "number" ? ` - Quality ${(item.qualityScore * 100).toFixed(1)}%` : ""}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <div>
                             <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-code">
-                                Class Code (linked)
+                                Class Code
                             </label>
                             <input
                                 id="home-class-code"
@@ -399,6 +441,12 @@ export default function EnrollmentPage() {
                                 Class code is fixed from the selected student profile.
                             </p>
                         </div>
+
+                        {notice && (
+                            <div className={noticeClassName} role="alert" aria-live="polite">
+                                {notice}
+                            </div>
+                        )}
 
                         <div className="flex flex-wrap gap-3">
                             <button
@@ -432,12 +480,6 @@ export default function EnrollmentPage() {
                             <AlertTriangle className="h-4 w-4" />
                             Current mode: <strong>{user.role}</strong>. Please sign in as teacher.
                         </p>
-                    </div>
-                )}
-
-                {notice && (
-                    <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800 shadow-sm">
-                        {notice}
                     </div>
                 )}
 
@@ -533,10 +575,29 @@ export default function EnrollmentPage() {
                                             Last enrolled: {new Date(faceEnrolledAt).toLocaleString()}
                                         </p>
                                     )}
+                                    {selectedStudentId && (
+                                        <div className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                                Enrollment History
+                                            </p>
+                                            {faceEnrollmentHistory.length === 0 ? (
+                                                <p className="mt-1 text-xs text-slate-500">No enrollment history yet.</p>
+                                            ) : (
+                                                <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                                                    {faceEnrollmentHistory.slice(0, 5).map((item, index) => (
+                                                        <li key={`focus-${item.id}-${index}`}>
+                                                            {item.createdAt ? new Date(item.createdAt).toLocaleString() : "Unknown time"}
+                                                            {typeof item.qualityScore === "number" ? ` - Quality ${(item.qualityScore * 100).toFixed(1)}%` : ""}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-code-focus">
-                                        Class Code (linked)
+                                        Class Code
                                     </label>
                                     <input
                                         id="home-class-code-focus"
@@ -549,6 +610,13 @@ export default function EnrollmentPage() {
                                         Class code is fixed from the selected student profile.
                                     </p>
                                 </div>
+
+                                {notice && (
+                                    <div className={noticeClassName} role="alert" aria-live="polite">
+                                        {notice}
+                                    </div>
+                                )}
+
                                 <button
                                     className="interactive-btn inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
                                     disabled={isSubmitting || !hasEnrollmentAccess || !isCameraReady}
