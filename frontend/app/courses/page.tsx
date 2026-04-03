@@ -1,20 +1,24 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BookCopy, Layers3, Plus, SquareUserRound, Pencil, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { ErrorState, LoadingState } from "@/components/ui/States";
 import { ClassIcons } from "@/components/icons";
+import { classService } from "@/services/class.service";
 import { courseService } from "@/services/course.service";
-import type { CourseItem, CreateCoursePayload } from "@/types/models";
+import type { ClassItem, CourseItem, CreateCoursePayload } from "@/types/models";
 
 export default function CoursesPage() {
+    const router = useRouter();
     const canUpdateCourse = true;
     const canDeleteCourse = true;
 
     const [courses, setCourses] = useState<CourseItem[]>([]);
+    const [homeClasses, setHomeClasses] = useState<ClassItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [modalError, setModalError] = useState<string | null>(null);
@@ -28,6 +32,7 @@ export default function CoursesPage() {
         course_code: "",
         course_name: "",
         semester: "",
+        home_class_id: undefined,
     });
 
     async function loadCourses() {
@@ -46,6 +51,17 @@ export default function CoursesPage() {
 
     useEffect(() => {
         void loadCourses();
+
+        async function loadHomeClasses() {
+            try {
+                const data = await classService.getAll();
+                setHomeClasses(data);
+            } catch {
+                setHomeClasses([]);
+            }
+        }
+
+        void loadHomeClasses();
     }, []);
 
     async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -119,6 +135,7 @@ export default function CoursesPage() {
             course_code: item.course_code ?? "",
             course_name: item.course_name ?? "",
             semester: item.semester ?? "",
+            home_class_id: item.home_class_id,
         });
         setIsModalOpen(true);
     }
@@ -127,8 +144,35 @@ export default function CoursesPage() {
         () => [
             { key: "code", title: "Course Class Code", render: (row: CourseItem) => row.course_code ?? "-" },
             { key: "name", title: "Course Name", render: (row: CourseItem) => row.course_name ?? "-" },
+            { key: "linkedClass", title: "Linked Home Class", render: (row: CourseItem) => row.home_class_code ?? "-" },
             { key: "semester", title: "Semester", render: (row: CourseItem) => row.semester ?? "-" },
             { key: "teacher", title: "Teacher ID", render: (row: CourseItem) => row.teacher_id ?? "-" },
+            // {
+            //     key: "homeClasses",
+            //     title: "Enrolled Home Classes",
+            //     render: (row: CourseItem) => {
+            //         const breakdown = Array.isArray(row.home_class_breakdown) ? row.home_class_breakdown : [];
+            //         if (breakdown.length === 0) {
+            //             if (row.home_class_code) {
+            //                 return <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">Linked: {row.home_class_code}</span>;
+            //             }
+            //             return <span className="text-xs font-medium text-slate-500">No enrolled students</span>;
+            //         }
+
+            //         return (
+            //             <div className="flex flex-wrap items-center gap-1.5">
+            //                 {breakdown.slice(0, 3).map((item) => (
+            //                     <span key={`${item.class_code}-${item.count}`} className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+            //                         {item.class_code}: {item.count}
+            //                     </span>
+            //                 ))}
+            //                 {breakdown.length > 3 && (
+            //                     <span className="text-xs font-medium text-slate-500">+{breakdown.length - 3} more</span>
+            //                 )}
+            //             </div>
+            //         );
+            //     },
+            // },
             {
                 key: "actions",
                 title: "Actions",
@@ -173,17 +217,53 @@ export default function CoursesPage() {
                 </header>
 
                 <div className="motion-stagger mt-4 grid gap-3 md:grid-cols-3">
-                    <article className="interactive-card rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+                    <article
+                        className="interactive-card cursor-pointer rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm"
+                        onClick={() => router.push("/sessions")}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push("/sessions");
+                            }
+                        }}
+                    >
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700"><BookCopy className="h-4 w-4" /> Course Classes</p>
                         <p className="mt-2 text-2xl font-bold text-blue-900">{totalCourses}</p>
+                        <p className="mt-1 text-xs font-medium text-blue-700">Open session scheduling</p>
                     </article>
-                    <article className="interactive-card rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
+                    <article
+                        className="interactive-card cursor-pointer rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm"
+                        onClick={() => router.push("/attendance?source=courses")}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push("/attendance?source=courses");
+                            }
+                        }}
+                    >
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700"><Layers3 className="h-4 w-4" /> Semesters</p>
                         <p className="mt-2 text-2xl font-bold text-indigo-900">{semesterCount}</p>
+                        <p className="mt-1 text-xs font-medium text-indigo-700">Open attendance by session</p>
                     </article>
-                    <article className="interactive-card rounded-2xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm">
+                    <article
+                        className="interactive-card cursor-pointer rounded-2xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm"
+                        onClick={() => router.push("/students")}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push("/students");
+                            }
+                        }}
+                    >
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700"><SquareUserRound className="h-4 w-4" /> Teachers</p>
                         <p className="mt-2 text-2xl font-bold text-cyan-900">{teacherCount}</p>
+                        <p className="mt-1 text-xs font-medium text-cyan-700">Go to student attendance list</p>
                     </article>
                 </div>
 
@@ -197,7 +277,7 @@ export default function CoursesPage() {
                         onClick={() => {
                             setModalError(null);
                             setEditingCourseId(null);
-                            setForm({ course_code: "", course_name: "", semester: "" });
+                            setForm({ course_code: "", course_name: "", semester: "", home_class_id: undefined });
                             setIsModalOpen(true);
                         }}
                     >
@@ -209,7 +289,7 @@ export default function CoursesPage() {
                     Current backend supports listing and creating course classes. Edit/Delete will be enabled after backend update APIs are added.
                 </div> */}
 
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                <div className="mt-4 md:rounded-2xl md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:shadow-sm">
                     {isLoading && <LoadingState label="Loading course class table..." />}
                     {!isLoading && error && <ErrorState label={error} />}
                     {!isLoading && !error && <DataTable columns={columns} rows={courses} emptyText="No course classes found" />}
@@ -254,6 +334,24 @@ export default function CoursesPage() {
                             onChange={(e) => setForm((prev) => ({ ...prev, course_name: e.target.value }))}
                             required
                         />
+                    </div>
+                    <div>
+                        <label className="text-sm font-semibold text-slate-700" htmlFor="course-home-class">
+                            Linked Home Class
+                        </label>
+                        <select
+                            id="course-home-class"
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                            value={form.home_class_id ?? ""}
+                            onChange={(e) => setForm((prev) => ({ ...prev, home_class_id: e.target.value ? Number(e.target.value) : undefined }))}
+                        >
+                            <option value="">Select home class</option>
+                            {homeClasses.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                    {item.class_code ?? `Class #${item.id}`} - {item.major ?? "Major"}
+                                </option>
+                            ))}
+                        </select>
                     </div>
                     <div>
                         <label className="text-sm font-semibold text-slate-700" htmlFor="course-semester">

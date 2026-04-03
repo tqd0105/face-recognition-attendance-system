@@ -2,17 +2,23 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import {
     CalendarClock,
     ClipboardList,
     Database,
-    LogOut,
+    Flame,
     School,
     Users,
-    Video,
+    UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { attendanceService } from "@/services/attendance.service";
+import { courseService } from "@/services/course.service";
+import { sessionService } from "@/services/session.service";
+import { studentService } from "@/services/student.service";
 import { FaceIdIcons, WebcamIcons, WebcamLiveIcons, StudentIcons, ClassIcons, SessionIcons, HistoryIcons } from "@/components/icons";
+import { ErrorState, LoadingState } from "@/components/ui/States";
 
 type DashboardCard = {
     title: string;
@@ -107,7 +113,61 @@ function BadgeIcon({ name }: { name: string }) {
 }
 
 export default function DashboardPage() {
-    const { user, logout } = useAuth();
+    const { user } = useAuth();
+    const [kpi, setKpi] = useState({ totalStudents: 0, activeSessions: 0, checkedInToday: 0, lateToday: 0 });
+    const [isKpiLoading, setIsKpiLoading] = useState(true);
+    const [kpiError, setKpiError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function loadTeacherKpi() {
+            if (user.role !== "teacher") {
+                setIsKpiLoading(false);
+                return;
+            }
+
+            try {
+                setIsKpiLoading(true);
+                setKpiError(null);
+
+                const [students, courses] = await Promise.all([
+                    studentService.getAll(),
+                    courseService.getAll(),
+                ]);
+
+                const courseIds = courses.map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id > 0);
+                const sessions = courseIds.length > 0 ? await sessionService.getAll(courseIds) : [];
+
+                const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
+                const todaySessions = sessions.filter((item) => (item.session_date ?? "").slice(0, 10) === todayKey);
+                const targetSessions = todaySessions.length > 0 ? todaySessions : sessions.filter((item) => item.status === "active");
+
+                const attendanceRows = await Promise.all(
+                    targetSessions.slice(0, 12).map((item) => attendanceService.getBySession(Number(item.id)).catch(() => []))
+                );
+
+                const merged = attendanceRows.flat();
+                const checkedUnique = new Set(
+                    merged
+                        .map((item) => `${item.session_id}:${item.student_id}`)
+                        .filter((value) => value && !value.endsWith(":0"))
+                );
+
+                setKpi({
+                    totalStudents: students.filter((item) => (item.status ?? "active") === "active").length,
+                    activeSessions: sessions.filter((item) => item.status === "active").length,
+                    checkedInToday: checkedUnique.size,
+                    lateToday: merged.filter((item) => item.status === "late").length,
+                });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Unable to load dashboard KPI";
+                setKpiError(message);
+            } finally {
+                setIsKpiLoading(false);
+            }
+        }
+
+        void loadTeacherKpi();
+    }, [user.role]);
 
     return (
         <main className="motion-page min-h-screen px-1 py-1 sm:px-2">
@@ -144,6 +204,39 @@ export default function DashboardPage() {
                         </div>
                     </div> */}
                 </header>
+
+                {user.role === "teacher" && (
+                    <section className="motion-stagger mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        {isKpiLoading ? (
+                            <div className="sm:col-span-2 xl:col-span-4">
+                                <LoadingState label="Loading teacher KPI..." />
+                            </div>
+                        ) : kpiError ? (
+                            <div className="sm:col-span-2 xl:col-span-4">
+                                <ErrorState label={kpiError} />
+                            </div>
+                        ) : (
+                            <>
+                                <article className="interactive-card rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+                                    <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700"><Users className="h-4 w-4" /> Active Students</p>
+                                    <p className="mt-2 text-2xl font-bold text-blue-900">{kpi.totalStudents}</p>
+                                </article>
+                                <article className="interactive-card rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
+                                    <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700"><CalendarClock className="h-4 w-4" /> Active Sessions</p>
+                                    <p className="mt-2 text-2xl font-bold text-indigo-900">{kpi.activeSessions}</p>
+                                </article>
+                                <article className="interactive-card rounded-2xl border border-emerald-100 bg-emerald-50 p-4 shadow-sm">
+                                    <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700"><UserCheck className="h-4 w-4" /> Checked-in Today</p>
+                                    <p className="mt-2 text-2xl font-bold text-emerald-900">{kpi.checkedInToday}</p>
+                                </article>
+                                <article className="interactive-card rounded-2xl border border-amber-100 bg-amber-50 p-4 shadow-sm">
+                                    <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700"><Flame className="h-4 w-4" /> Late Today</p>
+                                    <p className="mt-2 text-2xl font-bold text-amber-900">{kpi.lateToday}</p>
+                                </article>
+                            </>
+                        )}
+                    </section>
+                )}
 
                 <div className="motion-stagger mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {cards.map((card) => (

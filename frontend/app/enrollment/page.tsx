@@ -90,17 +90,6 @@ export default function EnrollmentPage() {
         void loadHomeClasses();
     }, []);
 
-    const classCodeMap = useMemo(() => {
-        const map = new Map<string, number>();
-        homeClasses.forEach((item) => {
-            const code = item.class_code?.trim();
-            if (code) {
-                map.set(code.toLowerCase(), Number(item.id));
-            }
-        });
-        return map;
-    }, [homeClasses]);
-
     const classIdToCodeMap = useMemo(() => {
         const map = new Map<number, string>();
         homeClasses.forEach((item) => {
@@ -231,13 +220,6 @@ export default function EnrollmentPage() {
             return;
         }
 
-        const normalizedClassCode = homeClassCode.trim().toLowerCase();
-        const resolvedHomeClassId = normalizedClassCode ? classCodeMap.get(normalizedClassCode) : undefined;
-        if (normalizedClassCode && !resolvedHomeClassId) {
-            setNotice("Class code not found. Please select a valid class code.");
-            return;
-        }
-
         const matchedStudent = students.find((item) => String(item.id) === selectedStudentId);
 
         try {
@@ -245,22 +227,9 @@ export default function EnrollmentPage() {
             setNotice(null);
             if (matchedStudent) {
                 const currentClassId = Number(matchedStudent.home_class_id ?? matchedStudent.class_id ?? 0) || undefined;
-                const shouldUpdateProfile = currentClassId !== resolvedHomeClassId;
-
-                if (shouldUpdateProfile) {
-                    const resolvedEmail = matchedStudent.email?.trim();
-                    if (!resolvedEmail) {
-                        setNotice("Selected student has no email. Please update email in Student Management first.");
-                        return;
-                    }
-
-                    const normalizedName = matchedStudent.name?.trim() || studentName.trim();
-                    await studentService.update(matchedStudent.id, {
-                        student_code: matchedStudent.student_code?.trim() || studentCode.trim(),
-                        name: normalizedName,
-                        email: resolvedEmail,
-                        home_class_id: resolvedHomeClassId,
-                    });
+                if (!currentClassId) {
+                    setNotice("Selected student has no linked class. Please link a class in Student Management first.");
+                    return;
                 }
 
                 const imageBlob = await captureFaceSnapshot();
@@ -282,7 +251,7 @@ export default function EnrollmentPage() {
                             student_code: matchedStudent.student_code?.trim() || studentCode.trim(),
                             name: matchedStudent.name?.trim() || studentName.trim(),
                             email: resolvedEmail,
-                            home_class_id: resolvedHomeClassId ?? currentClassId,
+                            home_class_id: currentClassId,
                             status: "active",
                         });
                     }
@@ -405,9 +374,9 @@ export default function EnrollmentPage() {
                                     </span>
                                 )}
                             </div>
-                            <p className="mt-1 text-xs text-slate-500">
+                            {/* <p className="mt-1 text-xs text-slate-500">
                                 Status is read from biometrics API, not from form fields.
-                            </p>
+                            </p> */}
                             {hasFaceEnrolled && faceEnrolledAt && (
                                 <p className="mt-1 text-xs text-slate-500">
                                     Last enrolled: {new Date(faceEnrolledAt).toLocaleString()}
@@ -417,21 +386,18 @@ export default function EnrollmentPage() {
 
                         <div>
                             <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-code">
-                                Class Code
+                                Class Code (linked)
                             </label>
-                            <select
+                            <input
                                 id="home-class-code"
                                 className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 value={homeClassCode}
-                                onChange={(e) => setHomeClassCode(e.target.value)}
-                            >
-                                <option value="">No class</option>
-                                {homeClasses.map((item) => (
-                                    <option key={item.id} value={item.class_code ?? ""}>
-                                        {item.class_code ?? `Class #${item.id}`} - {item.major ?? "Major"}
-                                    </option>
-                                ))}
-                            </select>
+                                readOnly
+                                placeholder="Student class is linked in Student Management"
+                            />
+                            <p className="mt-1 text-xs text-slate-500">
+                                Class code is fixed from the selected student profile.
+                            </p>
                         </div>
 
                         <div className="flex flex-wrap gap-3">
@@ -559,9 +525,9 @@ export default function EnrollmentPage() {
                                             </span>
                                         )}
                                     </div>
-                                    <p className="mt-1 text-xs text-slate-500">
+                                    {/* <p className="mt-1 text-xs text-slate-500">
                                         Status is read from biometrics API, not from form fields.
-                                    </p>
+                                    </p> */}
                                     {hasFaceEnrolled && faceEnrolledAt && (
                                         <p className="mt-1 text-xs text-slate-500">
                                             Last enrolled: {new Date(faceEnrolledAt).toLocaleString()}
@@ -570,21 +536,18 @@ export default function EnrollmentPage() {
                                 </div>
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700" htmlFor="home-class-code-focus">
-                                        Class Code
+                                        Class Code (linked)
                                     </label>
-                                    <select
+                                    <input
                                         id="home-class-code-focus"
                                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                         value={homeClassCode}
-                                        onChange={(e) => setHomeClassCode(e.target.value)}
-                                    >
-                                        <option value="">No class</option>
-                                        {homeClasses.map((item) => (
-                                            <option key={item.id} value={item.class_code ?? ""}>
-                                                {item.class_code ?? `Class #${item.id}`} - {item.major ?? "Major"}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        readOnly
+                                        placeholder="Student class is linked in Student Management"
+                                    />
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        Class code is fixed from the selected student profile.
+                                    </p>
                                 </div>
                                 <button
                                     className="interactive-btn inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"

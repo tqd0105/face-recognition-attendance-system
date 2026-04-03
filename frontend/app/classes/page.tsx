@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, BookOpenCheck, Layers3, Building2, Pencil, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
@@ -11,6 +12,7 @@ import type { ClassItem, CreateClassPayload } from "@/types/models";
 import { ClassIcons } from "@/components/icons";
 
 export default function ClassesPage() {
+    const router = useRouter();
     const canUpdateClass = true;
     const canDeleteClass = true;
 
@@ -175,17 +177,53 @@ export default function ClassesPage() {
                 </header>
 
                 <div className="motion-stagger mt-4 grid gap-3 md:grid-cols-3">
-                    <article className="interactive-card rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+                    <article
+                        className="interactive-card cursor-pointer rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm"
+                        onClick={() => router.push("/students")}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push("/students");
+                            }
+                        }}
+                    >
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700"><BookOpenCheck className="h-4 w-4" /> Home Classes</p>
                         <p className="mt-2 text-2xl font-bold text-blue-900">{totalClasses}</p>
+                        <p className="mt-1 text-xs font-medium text-blue-700">Open students by home class</p>
                     </article>
-                    <article className="interactive-card rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
+                    <article
+                        className="interactive-card cursor-pointer rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm"
+                        onClick={() => router.push("/courses")}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push("/courses");
+                            }
+                        }}
+                    >
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700"><Layers3 className="h-4 w-4" /> Majors</p>
                         <p className="mt-2 text-2xl font-bold text-indigo-900">{majorCount}</p>
+                        <p className="mt-1 text-xs font-medium text-indigo-700">Go to course class management</p>
                     </article>
-                    <article className="interactive-card rounded-2xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm">
+                    <article
+                        className="interactive-card cursor-pointer rounded-2xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm"
+                        onClick={() => router.push("/attendance?source=classes")}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push("/attendance?source=classes");
+                            }
+                        }}
+                    >
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700"><Building2 className="h-4 w-4" /> Departments</p>
                         <p className="mt-2 text-2xl font-bold text-cyan-900">{departmentCount}</p>
+                        <p className="mt-1 text-xs font-medium text-cyan-700">View realtime attendance</p>
                     </article>
                 </div>
 
@@ -211,7 +249,7 @@ export default function ClassesPage() {
                     Current backend supports create/delete home classes. Edit will be enabled after backend update API is added.
                 </div> */}
 
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                <div className="mt-4 md:rounded-2xl md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:shadow-sm">
                     {isLoading && <LoadingState label="Loading home class table..." />}
                     {!isLoading && error && <ErrorState label={error} />}
                     {!isLoading && !error && <DataTable columns={columns} rows={classes} emptyText="No home classes found" />}

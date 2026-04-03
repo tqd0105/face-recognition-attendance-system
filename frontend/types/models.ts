@@ -57,15 +57,23 @@ export type CourseItem = {
   id: number;
   course_code?: string;
   course_name?: string;
+  home_class_id?: number;
+  home_class_code?: string;
   teacher_id?: number;
   semester?: string;
   created_at?: string;
+  enrolled_count?: number;
+  home_class_breakdown?: Array<{
+    class_code: string;
+    count: number;
+  }>;
 };
 
 export type CreateCoursePayload = {
   course_code: string;
   course_name: string;
   semester?: string;
+  home_class_id?: number;
 };
 
 export type Session = {
@@ -122,6 +130,17 @@ export type AttendanceItem = {
   session_start_time?: string;
   session_end_time?: string;
   session_status?: string;
+};
+
+export type StudentAttendanceHistoryItem = {
+  attendance_id: number;
+  status: string;
+  check_in_time?: string;
+  session_date?: string;
+  start_time?: string;
+  end_time?: string;
+  course_name?: string;
+  course_code?: string;
 };
 
 export type RealtimeDetection = {

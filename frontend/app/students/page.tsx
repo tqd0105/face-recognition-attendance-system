@@ -1,14 +1,17 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Users, Mail, BadgeCheck, Pencil, RotateCcw, Trash2, UserX } from "lucide-react";
+import { Plus, Users, Mail, BadgeCheck, Pencil, RotateCcw, Trash2, UserX, CalendarDays, Clock3, BookOpenText } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Modal } from "@/components/ui/Modal";
 import { ErrorState, LoadingState } from "@/components/ui/States";
+import { attendanceService } from "@/services/attendance.service";
 import { classService } from "@/services/class.service";
+import { courseService } from "@/services/course.service";
+import { sessionService } from "@/services/session.service";
 import { studentService } from "@/services/student.service";
-import type { ClassItem, CreateStudentPayload, Student } from "@/types/models";
+import type { AttendanceItem, ClassItem, CreateStudentPayload, Session, Student, StudentAttendanceHistoryItem } from "@/types/models";
 import { StudentIcons } from "@/components/icons";
 
 export default function StudentsPage() {
@@ -24,6 +27,12 @@ export default function StudentsPage() {
     const [pendingDeleteStudent, setPendingDeleteStudent] = useState<Student | null>(null);
     const [pendingAction, setPendingAction] = useState<"deactivate" | "restore" | "hard-delete">("deactivate");
     const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
+    const [sessionOptions, setSessionOptions] = useState<Session[]>([]);
+    const [selectedSessionId, setSelectedSessionId] = useState("");
+    const [attendanceByStudent, setAttendanceByStudent] = useState<Record<number, AttendanceItem["status"]>>({});
+    const [historyModalStudent, setHistoryModalStudent] = useState<Student | null>(null);
+    const [historyRows, setHistoryRows] = useState<StudentAttendanceHistoryItem[]>([]);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
     const [form, setForm] = useState<CreateStudentPayload>({
         student_code: "",
@@ -58,7 +67,54 @@ export default function StudentsPage() {
         }
 
         void loadHomeClasses();
+
+        async function loadSessionsForAttendance() {
+            try {
+                const courses = await courseService.getAll();
+                const courseIds = courses.map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id > 0);
+                if (courseIds.length === 0) {
+                    setSessionOptions([]);
+                    setSelectedSessionId("");
+                    return;
+                }
+
+                const sessionItems = await sessionService.getAll(courseIds);
+                setSessionOptions(sessionItems);
+                const preferred = sessionItems.find((item) => item.status === "active") ?? sessionItems[0];
+                setSelectedSessionId(preferred ? String(preferred.id) : "");
+            } catch {
+                setSessionOptions([]);
+                setSelectedSessionId("");
+            }
+        }
+
+        void loadSessionsForAttendance();
     }, [loadStudents]);
+
+    useEffect(() => {
+        async function loadAttendanceStatusBySession() {
+            if (!selectedSessionId.trim()) {
+                setAttendanceByStudent({});
+                return;
+            }
+
+            try {
+                const records = await attendanceService.getBySession(Number(selectedSessionId));
+                const nextMap: Record<number, AttendanceItem["status"]> = {};
+                records.forEach((item) => {
+                    const sid = Number(item.student_id);
+                    if (Number.isFinite(sid) && sid > 0 && !nextMap[sid]) {
+                        nextMap[sid] = item.status;
+                    }
+                });
+                setAttendanceByStudent(nextMap);
+            } catch {
+                setAttendanceByStudent({});
+            }
+        }
+
+        void loadAttendanceStatusBySession();
+    }, [selectedSessionId]);
 
     const homeClassCodeMap = useMemo(() => {
         return new Map(homeClasses.map((item) => [Number(item.id), item.class_code ?? `Class #${item.id}`]));
@@ -174,6 +230,67 @@ export default function StudentsPage() {
         setIsModalOpen(true);
     }, []);
 
+    const openHistoryModal = useCallback(async (student: Student) => {
+        setHistoryModalStudent(student);
+        setHistoryRows([]);
+        setIsHistoryLoading(true);
+        try {
+            const rows = await attendanceService.getStudentHistory(student.id);
+            setHistoryRows(rows);
+        } catch {
+            setHistoryRows([]);
+        } finally {
+            setIsHistoryLoading(false);
+        }
+    }, []);
+
+    function formatHistoryDateTime(value?: string): string {
+        if (!value) {
+            return "-";
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+        return new Intl.DateTimeFormat("en-GB", {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+            timeZone: "Asia/Ho_Chi_Minh",
+            timeZoneName: "short",
+        }).format(parsed);
+    }
+
+    function formatHistorySessionDate(value?: string): string {
+        if (!value) {
+            return "-";
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+        return new Intl.DateTimeFormat("en-GB", {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            timeZone: "Asia/Ho_Chi_Minh",
+        }).format(parsed);
+    }
+
+    function getHistoryStatusClass(status?: string): string {
+        if (status === "present") {
+            return "rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700";
+        }
+        if (status === "late") {
+            return "rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700";
+        }
+        return "rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700";
+    }
+
     const columns = useMemo(
         () => [
             { key: "code", title: "Student Code", render: (row: Student) => row.student_code ?? "-" },
@@ -192,10 +309,33 @@ export default function StudentsPage() {
             },
             { key: "status", title: "Status", render: (row: Student) => row.status ?? "active" },
             {
+                key: "attendance",
+                title: "Attendance",
+                render: (row: Student) => {
+                    const state = attendanceByStudent[row.id];
+                    if (!state) {
+                        return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Not checked</span>;
+                    }
+
+                    if (state === "present") {
+                        return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Present</span>;
+                    }
+
+                    if (state === "late") {
+                        return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Late</span>;
+                    }
+
+                    return <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">Absent</span>;
+                },
+            },
+            {
                 key: "actions",
                 title: "Actions",
                 render: (row: Student) => (
-                    <div className="flex items-center gap-1.5">
+                    <div
+                        className="flex items-center gap-1.5"
+                        onClick={(event) => event.stopPropagation()}
+                    >
                         <button
                             type="button"
                             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 xl:h-auto xl:w-auto xl:gap-1 xl:px-2.5 xl:py-1"
@@ -245,13 +385,21 @@ export default function StudentsPage() {
                 ),
             },
         ],
-        [homeClassCodeMap, onDeleteStudent, onEditStudent, onHardDeleteStudent, onRestoreStudent],
+        [attendanceByStudent, homeClassCodeMap, onDeleteStudent, onEditStudent, onHardDeleteStudent, onRestoreStudent],
     );
 
     const totalStudents = students.length;
     const studentsWithEmail = visibleStudents.filter((item) => Boolean(item.email?.trim())).length;
     const activeStudents = students.filter((item) => (item.status ?? "active") === "active").length;
     const inactiveStudents = students.filter((item) => (item.status ?? "active") === "inactive").length;
+    const checkedInCount = visibleStudents.filter((item) => Boolean(attendanceByStudent[item.id])).length;
+    const historyStats = useMemo(() => {
+        const total = historyRows.length;
+        const present = historyRows.filter((item) => item.status === "present").length;
+        const late = historyRows.filter((item) => item.status === "late").length;
+        const absent = historyRows.filter((item) => item.status === "absent").length;
+        return { total, present, late, absent };
+    }, [historyRows]);
 
     return (
         <main className="motion-page space-y-4 px-1 py-1 sm:px-2">
@@ -266,7 +414,7 @@ export default function StudentsPage() {
                     </div>
                 </header>
 
-                <div className="motion-stagger mt-4 grid gap-3 md:grid-cols-3">
+                <div className="motion-stagger mt-4 grid gap-3 md:grid-cols-4">
                     <article className="interactive-card rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700"><Users className="h-4 w-4" /> Total Students</p>
                         <p className="mt-2 text-2xl font-bold text-blue-900">{totalStudents}</p>
@@ -279,11 +427,29 @@ export default function StudentsPage() {
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700"><BadgeCheck className="h-4 w-4" /> Active</p>
                         <p className="mt-2 text-2xl font-bold text-emerald-900">{activeStudents}</p>
                     </article>
+                    <article className="interactive-card rounded-2xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm">
+                        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700"><BadgeCheck className="h-4 w-4" /> Checked-in</p>
+                        <p className="mt-2 text-2xl font-bold text-cyan-900">{checkedInCount}</p>
+                    </article>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
                     <div className="ml-4">
                         <p className=" text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">List Student</p>
+                        <div className="mt-2 max-w-xs">
+                            <select
+                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+                                value={selectedSessionId}
+                                onChange={(event) => setSelectedSessionId(event.target.value)}
+                            >
+                                <option value="">Attendance: no session selected</option>
+                                {sessionOptions.map((item) => (
+                                    <option key={item.id} value={String(item.id)}>
+                                        Session #{item.id} - {item.session_date || "No date"}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                             <button
                                 type="button"
@@ -331,12 +497,87 @@ export default function StudentsPage() {
                     </button>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                <div className="mt-4 md:rounded-2xl md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:shadow-sm">
                     {isLoading && <LoadingState label="Loading student table..." />}
                     {!isLoading && error && <ErrorState label={error} />}
-                    {!isLoading && !error && <DataTable columns={columns} rows={visibleStudents} emptyText="No students found" />}
+                    {!isLoading && !error && (
+                        <DataTable
+                            columns={columns}
+                            rows={visibleStudents}
+                            emptyText="No students found"
+                            onRowClick={(row) => {
+                                void openHistoryModal(row);
+                            }}
+                        />
+                    )}
                 </div>
             </section>
+
+            <Modal
+                open={Boolean(historyModalStudent)}
+                title={historyModalStudent ? `Attendance History: ${historyModalStudent.name}` : "Attendance History"}
+                onClose={() => {
+                    setHistoryModalStudent(null);
+                    setHistoryRows([]);
+                }}
+            >
+                {isHistoryLoading ? (
+                    <LoadingState label="Loading attendance history..." />
+                ) : historyRows.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-center">
+                        <p className="text-sm font-semibold text-slate-700">No attendance records yet</p>
+                        <p className="mt-1 text-xs text-slate-500">This student has no attendance history in the selected data scope.</p>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        <section className="rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-900 to-cyan-900 px-4 py-3 text-white">
+                            <p className="text-lg font-bold">{historyModalStudent?.name}</p>
+                            <p className="mt-1 text-xs text-slate-200">
+                                {historyModalStudent?.student_code ?? "No code"}
+                                {historyModalStudent?.home_class_id
+                                    ? ` | ${homeClassCodeMap.get(Number(historyModalStudent.home_class_id)) ?? `Class #${historyModalStudent.home_class_id}`}`
+                                    : ""}
+                                {historyModalStudent?.email ? ` | ${historyModalStudent.email}` : ""}
+                            </p>
+                        </section>
+
+                        <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                            <article className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-center">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">Records</p>
+                                <p className="mt-1 text-lg font-bold text-blue-900">{historyStats.total}</p>
+                            </article>
+                            <article className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-center">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">Present</p>
+                                <p className="mt-1 text-lg font-bold text-emerald-900">{historyStats.present}</p>
+                            </article>
+                            <article className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700">Late</p>
+                                <p className="mt-1 text-lg font-bold text-amber-900">{historyStats.late}</p>
+                            </article>
+                            <article className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-700">Absent</p>
+                                <p className="mt-1 text-lg font-bold text-rose-900">{historyStats.absent}</p>
+                            </article>
+                        </section>
+
+                        <ul className="grid gap-2.5">
+                            {historyRows.map((item) => (
+                                <li key={`${item.attendance_id}-${item.check_in_time ?? "none"}`} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm shadow-sm">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <p className="font-semibold text-slate-900">{item.course_code ?? "Course"}{item.course_name ? ` - ${item.course_name}` : ""}</p>
+                                        <span className={getHistoryStatusClass(item.status)}>{item.status?.toUpperCase() ?? "UNKNOWN"}</span>
+                                    </div>
+                                    <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                                        <p className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5 text-indigo-600" /> Session: {formatHistorySessionDate(item.session_date)} | {item.start_time ?? "--:--"} - {item.end_time ?? "--:--"}</p>
+                                        <p className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5 text-cyan-600" /> Check-in: {formatHistoryDateTime(item.check_in_time)}</p>
+                                        <p className="inline-flex items-center gap-1.5"><BookOpenText className="h-3.5 w-3.5 text-blue-600" /> Attendance ID: {item.attendance_id}</p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </Modal>
 
             <Modal
                 open={isModalOpen}

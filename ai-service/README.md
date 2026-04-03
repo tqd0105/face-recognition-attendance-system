@@ -14,7 +14,7 @@ Internal AI service for face encoding and recognition.
 
 ```bash
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8001
+uvicorn app.main:app --reload --port 8000
 ```
 
 ## Quick Smoke Test
@@ -22,7 +22,7 @@ uvicorn app.main:app --reload --port 8001
 1. Start service with token:
 
 ```bash
-AI_SERVICE_TOKEN=change_me /bin/python3 -m uvicorn app.main:app --reload --port 8001
+AI_SERVICE_TOKEN=change_me /bin/python3 -m uvicorn app.main:app --reload --port 8000
 ```
 
 2. Run smoke test script from `ai-service`:

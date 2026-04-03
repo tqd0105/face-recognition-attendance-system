@@ -1,16 +1,27 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, CalendarClock, Layers, CircleCheckBig, Pencil, Trash2 } from "lucide-react";
+import { attendanceService } from "@/services/attendance.service";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { courseService } from "@/services/course.service";
 import { sessionService } from "@/services/session.service";
+import { backendUrl } from "@/lib/backend";
 import type { CourseItem, Session } from "@/types/models";
 import { SessionIcons } from "@/components/icons";
 
+type ServiceHealth = {
+    backend: "up" | "down";
+    database: "up" | "down";
+    ai: "up" | "down" | "unknown";
+    ai_url?: string;
+};
+
 export default function SessionsPage() {
+    const router = useRouter();
     const canUpdateSession = true;
     const canDeleteSession = true;
     const canControlSession = true;
@@ -20,6 +31,7 @@ export default function SessionsPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [actionSessionId, setActionSessionId] = useState<number | null>(null);
     const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
     const [pendingDeleteSession, setPendingDeleteSession] = useState<Session | null>(null);
     const [selectedCourseClassId, setSelectedCourseClassId] = useState("");
@@ -29,6 +41,10 @@ export default function SessionsPage() {
     const [status, setStatus] = useState<"scheduled" | "active" | "completed" | "canceled">("scheduled");
     const [error, setError] = useState<string | null>(null);
     const [modalError, setModalError] = useState<string | null>(null);
+    const [featuredAttendanceCount, setFeaturedAttendanceCount] = useState(0);
+    const [serviceHealth, setServiceHealth] = useState<ServiceHealth | null>(null);
+
+    const createStatusDescription = "New sessions are always created as scheduled. Use Start and Stop actions in the list to change lifecycle status.";
 
     useEffect(() => {
         async function loadClassSources() {
@@ -58,6 +74,37 @@ export default function SessionsPage() {
         }
 
         void loadClassSources();
+    }, []);
+
+    useEffect(() => {
+        let timer: ReturnType<typeof setInterval> | null = null;
+        let isMounted = true;
+
+        async function loadServiceHealth() {
+            try {
+                const response = await fetch(backendUrl("/api/health/services"));
+                const payload = (await response.json()) as { data?: ServiceHealth };
+                if (isMounted && payload?.data) {
+                    setServiceHealth(payload.data);
+                }
+            } catch {
+                if (isMounted) {
+                    setServiceHealth({ backend: "down", database: "down", ai: "unknown" });
+                }
+            }
+        }
+
+        void loadServiceHealth();
+        timer = setInterval(() => {
+            void loadServiceHealth();
+        }, 15000);
+
+        return () => {
+            isMounted = false;
+            if (timer) {
+                clearInterval(timer);
+            }
+        };
     }, []);
 
     const hasCourseOptions = courses.length > 0;
@@ -189,12 +236,22 @@ export default function SessionsPage() {
 
         try {
             setError(null);
-            await sessionService.start(item.id);
-            const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
-            setSessions(latest);
+            setActionSessionId(item.id);
+
+            const updated = await sessionService.start(item.id);
+            setSessions((prev) => prev.map((session) => (session.id === item.id ? { ...session, ...updated } : session)));
+
+            try {
+                const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
+                setSessions(latest);
+            } catch {
+                // Keep optimistic update when refresh fails.
+            }
         } catch (err) {
             const message = err instanceof Error ? err.message : "Cannot start session";
             setError(message);
+        } finally {
+            setActionSessionId(null);
         }
     }, [canControlSession, courses]);
 
@@ -206,12 +263,21 @@ export default function SessionsPage() {
 
         try {
             setError(null);
-            await sessionService.stop(item.id);
-            const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
-            setSessions(latest);
+            setActionSessionId(item.id);
+            const updated = await sessionService.stop(item.id);
+            setSessions((prev) => prev.map((session) => (session.id === item.id ? { ...session, ...updated } : session)));
+
+            try {
+                const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
+                setSessions(latest);
+            } catch {
+                // Keep optimistic update when refresh fails.
+            }
         } catch (err) {
             const message = err instanceof Error ? err.message : "Cannot stop session";
             setError(message);
+        } finally {
+            setActionSessionId(null);
         }
     }, [canControlSession, courses]);
 
@@ -242,31 +308,44 @@ export default function SessionsPage() {
                             <button
                                 type="button"
                                 className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
-                                onClick={() => onStopSession(row)}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    void onStopSession(row);
+                                }}
+                                disabled={actionSessionId === row.id}
                             >
-                                Stop
+                                {actionSessionId === row.id ? "Stopping..." : "Stop"}
                             </button>
                         ) : (
                             <button
                                 type="button"
                                 className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                                onClick={() => onStartSession(row)}
-                                disabled={row.status === "canceled"}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    void onStartSession(row);
+                                }}
+                                disabled={actionSessionId === row.id}
                             >
-                                Start
+                                {actionSessionId === row.id ? "Starting..." : "Start"}
                             </button>
                         )}
                         <button
                             type="button"
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                            onClick={() => onEditSession(row)}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                onEditSession(row);
+                            }}
                         >
                             <Pencil className="h-3.5 w-3.5" /> Edit
                         </button>
                         <button
                             type="button"
                             className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-                            onClick={() => onDeleteSession(row)}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                onDeleteSession(row);
+                            }}
                         >
                             <Trash2 className="h-3.5 w-3.5" /> Delete
                         </button>
@@ -279,6 +358,31 @@ export default function SessionsPage() {
 
     const totalSessions = sessions.length;
     const activeSessions = sessions.filter((item) => item.status === "active").length;
+    const featuredSession = useMemo(() => {
+        const active = sessions.find((item) => item.status === "active");
+        if (active) {
+            return active;
+        }
+        return sessions[0] ?? null;
+    }, [sessions]);
+
+    useEffect(() => {
+        async function loadFeaturedAttendance() {
+            if (!featuredSession) {
+                setFeaturedAttendanceCount(0);
+                return;
+            }
+
+            try {
+                const rows = await attendanceService.getBySession(Number(featuredSession.id));
+                setFeaturedAttendanceCount(rows.length);
+            } catch {
+                setFeaturedAttendanceCount(0);
+            }
+        }
+
+        void loadFeaturedAttendance();
+    }, [featuredSession]);
 
     return (
         <main className="motion-page space-y-4 px-1 py-1 sm:px-2">
@@ -293,18 +397,72 @@ export default function SessionsPage() {
                     </div>
                 </header>
 
+                {/* <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${serviceHealth?.backend === "up" ? "border border-emerald-300 bg-emerald-50 text-emerald-700" : "border border-rose-300 bg-rose-50 text-rose-700"}`}>
+                            Backend: {serviceHealth?.backend === "up" ? "Up" : "Down"}
+                        </span>
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${serviceHealth?.database === "up" ? "border border-emerald-300 bg-emerald-50 text-emerald-700" : "border border-rose-300 bg-rose-50 text-rose-700"}`}>
+                            Database: {serviceHealth?.database === "up" ? "Up" : "Down"}
+                        </span>
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${serviceHealth?.ai === "up" ? "border border-emerald-300 bg-emerald-50 text-emerald-700" : serviceHealth?.ai === "down" ? "border border-rose-300 bg-rose-50 text-rose-700" : "border border-slate-300 bg-slate-100 text-slate-700"}`}>
+                            AI Service: {serviceHealth?.ai === "up" ? "Up" : serviceHealth?.ai === "down" ? "Down" : "Unknown"}
+                        </span>
+                    </div>
+                    {serviceHealth?.ai_url && (
+                        <p className="mt-2 text-xs text-slate-500">AI endpoint: {serviceHealth.ai_url}</p>
+                    )}
+                </div> */}
+
                 <div className="motion-stagger mt-4 grid gap-3 md:grid-cols-3">
-                    <article className="interactive-card rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+                    <article
+                        className="interactive-card cursor-pointer rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm"
+                        onClick={() => router.push("/attendance?source=sessions")}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push("/attendance?source=sessions");
+                            }
+                        }}
+                    >
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700"><CalendarClock className="h-4 w-4" /> Sessions</p>
                         <p className="mt-2 text-2xl font-bold text-blue-900">{totalSessions}</p>
+                        <p className="mt-1 text-xs font-medium text-blue-700">Open realtime attendance</p>
                     </article>
                     <article className="interactive-card rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700"><CircleCheckBig className="h-4 w-4" /> Active</p>
                         <p className="mt-2 text-2xl font-bold text-indigo-900">{activeSessions}</p>
+                        <p className="mt-1 text-xs font-medium text-indigo-700">Sessions currently running</p>
                     </article>
-                    <article className="interactive-card rounded-2xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm">
+                    <article
+                        className="interactive-card cursor-pointer rounded-2xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm"
+                        onClick={() => {
+                            if (featuredSession) {
+                                router.push(`/attendance?source=sessions&session=${featuredSession.id}`);
+                                return;
+                            }
+                            router.push("/attendance?source=sessions");
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                if (featuredSession) {
+                                    router.push(`/attendance?source=sessions&session=${featuredSession.id}`);
+                                } else {
+                                    router.push("/attendance?source=sessions");
+                                }
+                            }
+                        }}
+                    >
                         <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700"><Layers className="h-4 w-4" /> {optionSourceLabel} Options</p>
-                        <p className="mt-2 text-2xl font-bold text-cyan-900">{courseOptions.length}</p>
+                        <p className="mt-2 text-2xl font-bold text-cyan-900">{featuredAttendanceCount}</p>
+                        <p className="mt-1 text-xs font-medium text-cyan-700">
+                            {featuredSession ? `Checked-in for session #${featuredSession.id}` : "No session selected"}
+                        </p>
                     </article>
                 </div>
 
@@ -348,7 +506,7 @@ export default function SessionsPage() {
                     </div>
                 )} */}
 
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                <div className="mt-4 md:rounded-2xl md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:shadow-sm">
                     <DataTable columns={columns} rows={sessions} emptyText="No sessions created yet" />
                 </div>
             </section>
@@ -433,15 +591,18 @@ export default function SessionsPage() {
                         <label className="text-sm font-semibold text-slate-700" htmlFor="session-status">
                             Status
                         </label>
-                        <select
+                        <input
                             id="session-status"
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                            value={status}
-                            onChange={(e) => setStatus(e.target.value as "scheduled" | "active" | "completed" | "canceled")}
+                            value={editingSessionId ? status : "scheduled"}
+                            readOnly
                             disabled
-                        >
-                            <option value="scheduled">scheduled</option>
-                        </select>
+                        />
+                        <p className="mt-1 text-xs text-slate-500">
+                            {editingSessionId
+                                ? "Edit status from the session lifecycle actions in the list."
+                                : createStatusDescription}
+                        </p>
                     </div>
                     {/* <p className="text-xs text-slate-500">Session table constraint: start_time must be earlier than end_time.</p> */}
                     <button

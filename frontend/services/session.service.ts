@@ -221,14 +221,42 @@ export const sessionService = {
   },
 
   async start(id: number): Promise<Session> {
-    const { data } = await http.patch<SessionCreateResponse | SessionApiResponse>(`/api/sessions/${id}/start`);
-    const payload = (data as SessionCreateResponse)?.data ?? (data as SessionApiResponse);
-    return normalizeSession(payload);
+    try {
+      const { data } = await http.patch<SessionCreateResponse | SessionApiResponse>(`/api/sessions/${id}/start`);
+      const payload = (data as SessionCreateResponse)?.data ?? (data as SessionApiResponse);
+      return normalizeSession(payload);
+    } catch (error) {
+      const axiosError = axios.isAxiosError(error) ? error : null;
+      const apiMessage =
+        (axiosError?.response?.data as { message?: string; error?: string } | undefined)?.message ||
+        (axiosError?.response?.data as { message?: string; error?: string } | undefined)?.error;
+
+      if (apiMessage) {
+        throw new Error(apiMessage);
+      }
+
+      const status = axiosError?.response?.status;
+      throw new Error(status ? `Cannot start session (HTTP ${status})` : "Cannot start session");
+    }
   },
 
   async stop(id: number): Promise<Session> {
-    const { data } = await http.patch<SessionCreateResponse | SessionApiResponse>(`/api/sessions/${id}/stop`);
-    const payload = (data as SessionCreateResponse)?.data ?? (data as SessionApiResponse);
-    return normalizeSession(payload);
+    try {
+      const { data } = await http.patch<SessionCreateResponse | SessionApiResponse>(`/api/sessions/${id}/stop`);
+      const payload = (data as SessionCreateResponse)?.data ?? (data as SessionApiResponse);
+      return normalizeSession(payload);
+    } catch (error) {
+      const axiosError = axios.isAxiosError(error) ? error : null;
+      const apiMessage =
+        (axiosError?.response?.data as { message?: string; error?: string } | undefined)?.message ||
+        (axiosError?.response?.data as { message?: string; error?: string } | undefined)?.error;
+
+      if (apiMessage) {
+        throw new Error(apiMessage);
+      }
+
+      const status = axiosError?.response?.status;
+      throw new Error(status ? `Cannot stop session (HTTP ${status})` : "Cannot stop session");
+    }
   },
 };

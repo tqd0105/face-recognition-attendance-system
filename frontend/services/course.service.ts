@@ -35,6 +35,7 @@ export const courseService = {
       course_code: payload.course_code.trim(),
       course_name: payload.course_name.trim(),
       semester: payload.semester?.trim() || undefined,
+      home_class_id: payload.home_class_id,
     };
 
     try {
@@ -71,6 +72,7 @@ export const courseService = {
       course_code: payload.course_code.trim(),
       course_name: payload.course_name.trim(),
       semester: payload.semester?.trim() || undefined,
+      home_class_id: payload.home_class_id,
     };
 
     try {

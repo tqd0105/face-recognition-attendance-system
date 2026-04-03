@@ -1,7 +1,7 @@
 import { http } from "@/services/http";
 import axios from "axios";
 import { sessionService } from "@/services/session.service";
-import type { AttendanceItem, AttendancePayload, RealtimeRecognizeResponse } from "@/types/models";
+import type { AttendanceItem, AttendancePayload, RealtimeRecognizeResponse, StudentAttendanceHistoryItem } from "@/types/models";
 
 const ATTENDANCE_CACHE_KEY = "fras_attendance_cache";
 
@@ -213,6 +213,21 @@ export const attendanceService = {
     const items = data.map(normalizeAttendanceItem);
     saveAttendanceCache(items.slice(0, 300));
     return items;
+  },
+
+  async getStudentHistory(studentId: number, courseClassId?: number): Promise<StudentAttendanceHistoryItem[]> {
+    const { data } = await http.get<{ data?: StudentAttendanceHistoryItem[] } | StudentAttendanceHistoryItem[]>(
+      `/api/attendance/student/${studentId}`,
+      {
+        params: courseClassId ? { course_class_id: courseClassId } : undefined,
+      }
+    );
+
+    if (Array.isArray(data)) {
+      return data;
+    }
+
+    return Array.isArray(data?.data) ? data.data : [];
   },
 
   async updateById(id: string, status: string): Promise<AttendanceItem> {

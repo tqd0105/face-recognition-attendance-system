@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Clock3, Eye, ShieldCheck, X } from "lucide-react";
 import { WebcamLiveIcons } from "@/components/icons";
@@ -12,6 +14,8 @@ import { sessionService } from "@/services/session.service";
 import type { AttendanceItem, RealtimeDetection, Session, Student } from "@/types/models";
 
 export default function AttendancePage() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const timerRef = useRef<number | null>(null);
@@ -46,6 +50,16 @@ export default function AttendancePage() {
     const realtimeThreshold = 0.8;
     const oneFaceThreshold = 0.8;
     const scanIntervalMs = 420;
+    const querySessionId = searchParams.get("session")?.trim() ?? "";
+    const sourcePage = searchParams.get("source")?.trim() ?? "";
+
+    const sourceMeta = sourcePage === "classes"
+        ? { label: "Home Class Management", href: "/classes" }
+        : sourcePage === "courses"
+            ? { label: "Course Class Management", href: "/courses" }
+            : sourcePage === "sessions"
+                ? { label: "Session Management", href: "/sessions" }
+                : null;
 
     const selectedStudent = students.find((item) => item.student_code?.trim().toLowerCase() === studentCode.trim().toLowerCase());
     const selectedStudentId = Number(selectedStudent?.id ?? 0);
@@ -137,7 +151,10 @@ export default function AttendancePage() {
                 const items = data.slice().sort((a, b) => Number(b.id) - Number(a.id));
                 setAvailableSessions(items);
                 if (items.length > 0) {
-                    setSessionId(String(items[0].id));
+                    const preferred = querySessionId && items.some((item) => String(item.id) === querySessionId)
+                        ? querySessionId
+                        : String(items[0].id);
+                    setSessionId(preferred);
                 } else {
                     setSessionId("");
                 }
@@ -148,7 +165,7 @@ export default function AttendancePage() {
         }
 
         void loadSessions();
-    }, []);
+    }, [querySessionId]);
 
     useEffect(() => {
         async function loadStudents() {
@@ -620,7 +637,30 @@ export default function AttendancePage() {
     }
 
     return (
-        <main className="motion-page space-y-4 px-1 py-1 sm:px-2">
+        <main className="motion-page space-y-4 px-1 py-1 pb-24 sm:px-2 lg:pb-2">
+            {sourceMeta && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+                    <p>
+                        Opened from <span className="font-semibold">{sourceMeta.label}</span>
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            className="rounded-lg border border-sky-300 bg-white px-2.5 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                            onClick={() => router.back()}
+                        >
+                            Back
+                        </button>
+                        <Link
+                            href={sourceMeta.href}
+                            className="rounded-lg border border-sky-300 bg-white px-2.5 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                        >
+                            {sourceMeta.label}
+                        </Link>
+                    </div>
+                </div>
+            )}
+
             <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <header className="motion-hero rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-5 text-white shadow-lg sm:p-6">
                     <div className="grid grid-cols-1 items-center gap-4 sm:grid-cols-[auto_1fr]">
@@ -838,6 +878,37 @@ export default function AttendancePage() {
                     )}
                 </section>
             </section>
+
+            {canViewAttendance && (
+                <div className="fixed inset-x-3 bottom-3 z-40 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-xl backdrop-blur lg:hidden">
+                    <div className="grid grid-cols-3 gap-2">
+                        <button
+                            type="button"
+                            className="inline-flex h-10 items-center justify-center rounded-xl bg-blue-600 px-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={startScanning}
+                            disabled={isScanning || !sessionId.trim() || !canViewAttendance}
+                        >
+                            Start
+                        </button>
+                        <button
+                            type="button"
+                            className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={stopScanning}
+                            disabled={!isScanning}
+                        >
+                            Stop
+                        </button>
+                        <button
+                            type="button"
+                            className="inline-flex h-10 items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={createCheckIn}
+                            disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn}
+                        >
+                            One-Face
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {isFocusMode && (
                 <div className="motion-modal-backdrop fixed inset-0 z-50 grid place-items-center bg-slate-900/65 px-4" role="dialog" aria-modal="true">
