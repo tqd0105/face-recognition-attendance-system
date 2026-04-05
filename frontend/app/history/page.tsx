@@ -1,14 +1,48 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ClipboardList, Clock3, CircleCheckBig } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { attendanceService } from "@/services/attendance.service";
-import type { AttendanceItem } from "@/types/models";
+import type { AttendanceItem, StudentAttendanceHistoryItem } from "@/types/models";
 import { HistoryIcons } from "@/components/icons";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function HistoryPage() {
-    const [history] = useState<AttendanceItem[]>(() => attendanceService.getLocal());
+    const { user } = useAuth();
+    const [history, setHistory] = useState<AttendanceItem[]>(() => attendanceService.getLocal());
+
+    useEffect(() => {
+        async function loadStudentHistory() {
+            if (user.role !== "student") {
+                setHistory(attendanceService.getLocal());
+                return;
+            }
+
+            try {
+                const rows: StudentAttendanceHistoryItem[] = await attendanceService.getMyHistory();
+                const mapped: AttendanceItem[] = rows.map((item) => ({
+                    id: String(item.attendance_id),
+                    session_id: 0,
+                    student_id: 0,
+                    status: item.status,
+                    confidence_score: undefined,
+                    check_in_time: item.check_in_time ?? new Date().toISOString(),
+                    created_at: item.check_in_time ?? new Date().toISOString(),
+                    course_name: item.course_name,
+                    course_code: item.course_code,
+                    session_date: item.session_date,
+                    session_start_time: item.start_time,
+                    session_end_time: item.end_time,
+                }));
+                setHistory(mapped);
+            } catch {
+                setHistory([]);
+            }
+        }
+
+        void loadStudentHistory();
+    }, [user.role]);
 
     const columns = useMemo(
         () => [
@@ -17,8 +51,12 @@ export default function HistoryPage() {
                 title: "Check-in Time",
                 render: (row: AttendanceItem) => new Date(row.check_in_time ?? row.created_at).toLocaleString(),
             },
-            { key: "session", title: "Session ID", render: (row: AttendanceItem) => row.session_id },
-            { key: "student", title: "Student ID", render: (row: AttendanceItem) => row.student_id },
+            {
+                key: "session",
+                title: "Session",
+                render: (row: AttendanceItem) =>
+                    row.course_code ? `${row.course_code}${row.course_name ? ` - ${row.course_name}` : ""}` : row.session_id,
+            },
             { key: "status", title: "Status", render: (row: AttendanceItem) => row.status },
             {
                 key: "confidence",

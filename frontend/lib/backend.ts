@@ -1,7 +1,7 @@
 export const BACKEND_BASE_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:5000";
 
-export type UserRole = "guest" | "teacher" | "student";
+export type UserRole = "guest" | "teacher" | "student" | "admin";
 
 export type AuthSession = {
   token: string;
@@ -53,7 +53,7 @@ export function getAuthSession(): AuthSession {
   if (typeof window === "undefined") {
     return {
       token,
-      role: token ? "Teacher" : "Guest",
+      role: token ? "teacher" : "guest",
       displayName: token ? "Teacher" : "Unauthenticated",
     };
   }
@@ -65,7 +65,8 @@ export function getAuthSession(): AuthSession {
   return {
     token,
     role,
-    displayName: storedName || (role === "teacher" ? "Teacher" : role === "student" ? "Student" : "Guest"),
+    displayName:
+      storedName || (role === "admin" ? "Admin" : role === "teacher" ? "Teacher" : role === "student" ? "Student" : "Guest"),
   };
 }
 

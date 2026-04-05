@@ -67,3 +67,70 @@
 This relationship is resolved through a junction table called enrollments.
 
 (students 1 → N enrollments N ← 1 course_classes)
+
+
+#### Create teacher accout
+```
+cd /home/tqd0105/Applications/face-recognition-backend/backend
+```
+**Create**
+```
+node - <<'NODE'
+require('dotenv').config();
+const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
+
+const pool = new Pool({
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: Number(process.env.DB_PORT || 5432),
+});
+
+(async () => {
+  const passwordHash = await bcrypt.hash('123456', 10);
+
+  const rs = await pool.query(
+    `INSERT INTO Teacher (teacher_name, email, password)
+     VALUES ($1, $2, $3)
+     RETURNING id, teacher_name, email`,
+    ['Võ Thị Bình', 'binhvt@ut.edu.vn', passwordHash]
+  );
+
+  console.log(rs.rows);
+  await pool.end();
+})();
+NODE
+```
+
+
+**Update**
+``` 
+node - <<'NODE'
+require('dotenv').config();
+const { Pool } = require('pg');
+const pool = new Pool({
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: Number(process.env.DB_PORT || 5432),
+});
+(async () => {
+  const rs = await pool.query(
+    `UPDATE Teacher
+     SET teacher_name = $1, updated_at = CURRENT_TIMESTAMP
+     WHERE email = $2
+     RETURNING id, teacher_name, email`,
+    ['Nguyễn Văn Anh', 'anhnv@ut.edu.vn']
+  );
+  console.log(rs.rows);
+  await pool.end();
+})().catch(async (e) => {
+  console.error(e.message);
+  try { await pool.end(); } catch {}
+  process.exit(1);
+});
+NODE
+```

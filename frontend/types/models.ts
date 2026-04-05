@@ -1,4 +1,4 @@
-export type UserRole = "guest" | "teacher" | "student";
+export type UserRole = "guest" | "teacher" | "student" | "admin";
 
 export type AuthUser = {
   token: string;
@@ -15,6 +15,8 @@ export type LoginPayload = {
 export type LoginResponse = {
   token: string;
   teacher_name?: string;
+  student_name?: string;
+  role?: Exclude<UserRole, "guest">;
   message?: string;
 };
 
@@ -60,6 +62,7 @@ export type CourseItem = {
   home_class_id?: number;
   home_class_code?: string;
   teacher_id?: number;
+  teacher_code?: string;
   semester?: string;
   created_at?: string;
   enrolled_count?: number;

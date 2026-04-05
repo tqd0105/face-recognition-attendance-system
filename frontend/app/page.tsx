@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     CalendarClock,
     ClipboardList,
@@ -17,7 +17,7 @@ import { attendanceService } from "@/services/attendance.service";
 import { courseService } from "@/services/course.service";
 import { sessionService } from "@/services/session.service";
 import { studentService } from "@/services/student.service";
-import { FaceIdIcons, WebcamIcons, WebcamLiveIcons, StudentIcons, ClassIcons, SessionIcons, HistoryIcons } from "@/components/icons";
+import { FaceIdIcons, WebcamIcons, WebcamLiveIcons, StudentIcons, ClassIcons, SessionIcons, HistoryIcons, HomeClassIcons } from "@/components/icons";
 import { ErrorState, LoadingState } from "@/components/ui/States";
 
 type DashboardCard = {
@@ -65,7 +65,7 @@ const cards: DashboardCard[] = [
         cta: "Manage Home Classes",
         badge: "Academic",
         iconType: "image",
-        icon: ClassIcons,
+        icon: HomeClassIcons,
     },
     {
         title: "Course Class Management",
@@ -74,7 +74,7 @@ const cards: DashboardCard[] = [
         cta: "Manage Course",
         badge: "Teaching",
         iconType: "image",
-        icon: SessionIcons,
+        icon: ClassIcons,
     },
     {
         title: "Session Management",
@@ -114,13 +114,23 @@ function BadgeIcon({ name }: { name: string }) {
 
 export default function DashboardPage() {
     const { user } = useAuth();
+    const visibleCards = useMemo(() => {
+        if (user.role === "student") {
+            return cards.filter((card) => card.href === "/history");
+        }
+        if (user.role === "admin") {
+            return cards;
+        }
+        return cards;
+    }, [user.role]);
+
     const [kpi, setKpi] = useState({ totalStudents: 0, activeSessions: 0, checkedInToday: 0, lateToday: 0 });
     const [isKpiLoading, setIsKpiLoading] = useState(true);
     const [kpiError, setKpiError] = useState<string | null>(null);
 
     useEffect(() => {
         async function loadTeacherKpi() {
-            if (user.role !== "teacher") {
+            if (user.role !== "teacher" && user.role !== "admin") {
                 setIsKpiLoading(false);
                 return;
             }
@@ -205,7 +215,7 @@ export default function DashboardPage() {
                     </div> */}
                 </header>
 
-                {user.role === "teacher" && (
+                {(user.role === "teacher" || user.role === "admin") && (
                     <section className="motion-stagger mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         {isKpiLoading ? (
                             <div className="sm:col-span-2 xl:col-span-4">
@@ -239,8 +249,8 @@ export default function DashboardPage() {
                 )}
 
                 <div className="motion-stagger mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {cards.map((card, index) => {
-                        const isLastOddCard = cards.length % 2 === 1 && index === cards.length - 1;
+                    {visibleCards.map((card, index) => {
+                        const isLastOddCard = visibleCards.length % 2 === 1 && index === visibleCards.length - 1;
 
                         return (
                             <article

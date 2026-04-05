@@ -230,6 +230,21 @@ export const attendanceService = {
     return Array.isArray(data?.data) ? data.data : [];
   },
 
+  async getMyHistory(courseClassId?: number): Promise<StudentAttendanceHistoryItem[]> {
+    const { data } = await http.get<{ data?: StudentAttendanceHistoryItem[] } | StudentAttendanceHistoryItem[]>(
+      "/api/attendance/me",
+      {
+        params: courseClassId ? { course_class_id: courseClassId } : undefined,
+      }
+    );
+
+    if (Array.isArray(data)) {
+      return data;
+    }
+
+    return Array.isArray(data?.data) ? data.data : [];
+  },
+
   async updateById(id: string, status: string): Promise<AttendanceItem> {
     const { data } = await http.put<AttendanceApiResponse>(`/api/attendance/${id}`, { status });
     return data?.data ? normalizeAttendanceItem(data.data) : normalizeAttendanceItem({ id, status });

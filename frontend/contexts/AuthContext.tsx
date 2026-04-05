@@ -15,7 +15,7 @@ type AuthContextValue = {
 
 const guestUser: AuthUser = {
     token: "",
-    role: "Guest",
+    role: "guest",
     displayName: "Unauthenticated",
 };
 
@@ -55,8 +55,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 throw new Error(data.message ?? "Login failed");
             }
             const emailPrefix = payload.email.split("@")[0]?.trim();
-            const displayName = data.teacher_name?.trim() || emailPrefix || (payload.role === "teacher" ? "Teacher" : "Student");
-            setAuthSession(data.token, payload.role, displayName);
+            const role = data.role ?? payload.role;
+            const displayName =
+                data.student_name?.trim() ||
+                data.teacher_name?.trim() ||
+                emailPrefix ||
+                (role === "admin" ? "Admin" : role === "teacher" ? "Teacher" : "Student");
+            setAuthSession(data.token, role, displayName);
             setUser(getAuthSession());
         } finally {
             setIsLoggingIn(false);

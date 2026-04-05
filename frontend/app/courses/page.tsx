@@ -146,7 +146,7 @@ export default function CoursesPage() {
             { key: "name", title: "Course Name", render: (row: CourseItem) => row.course_name ?? "-" },
             { key: "linkedClass", title: "Linked Home Class", render: (row: CourseItem) => row.home_class_code ?? "-" },
             { key: "semester", title: "Semester", render: (row: CourseItem) => row.semester ?? "-" },
-            { key: "teacher", title: "Teacher ID", render: (row: CourseItem) => row.teacher_id ?? "-" },
+            { key: "teacher", title: "Teacher Code", render: (row: CourseItem) => row.teacher_code ?? row.teacher_id ?? "-" },
             // {
             //     key: "homeClasses",
             //     title: "Enrolled Home Classes",
@@ -201,7 +201,7 @@ export default function CoursesPage() {
 
     const totalCourses = courses.length;
     const semesterCount = new Set(courses.map((item) => item.semester?.trim()).filter(Boolean)).size;
-    const teacherCount = new Set(courses.map((item) => item.teacher_id).filter(Boolean)).size;
+    const teacherCount = new Set(courses.map((item) => item.teacher_code ?? String(item.teacher_id ?? "")).filter(Boolean)).size;
 
     return (
         <main className="motion-page space-y-4 px-1 py-1 sm:px-2">

@@ -21,7 +21,7 @@ export default function EnrollmentPage() {
     const streamRef = useRef<MediaStream | null>(null);
 
     const { user } = useAuth();
-    const hasEnrollmentAccess = user.role === "teacher" && Boolean(user.token);
+    const hasEnrollmentAccess = (user.role === "teacher" || user.role === "admin") && Boolean(user.token);
 
     const [studentCode, setStudentCode] = useState("");
     const [studentName, setStudentName] = useState("");

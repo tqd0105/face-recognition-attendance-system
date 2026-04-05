@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, GraduationCap, LogIn, ShieldCheck, Sparkles } from "lucide-react";
+import { GraduationCap, LogIn, ShieldCheck, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import type { UserRole } from "@/types/models";
 
@@ -43,15 +43,15 @@ export default function LoginPage() {
             <div className="pointer-events-none absolute -left-20 top-8 h-80 w-80 rounded-full bg-indigo-300/20 blur-3xl" />
             <div className="pointer-events-none absolute -right-20 bottom-8 h-80 w-80 rounded-full bg-cyan-300/20 blur-3xl" />
 
-            <section className="relative mx-auto grid w-full max-w-5xl gap-4 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.55)] sm:p-7 lg:grid-cols-[1.1fr_1fr]">
-                <aside className="motion-hero rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-5 text-white shadow-lg sm:p-7">
-                    <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]">
+            <section className="relative m-auto grid justify-center items-center w-full max-w-5xl gap-4 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.55)] sm:p-7 lg:grid-cols-[1.1fr_1fr]">
+                <aside className="my-auto motion-hero rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-5 text-white shadow-lg sm:p-7">
+                    <p className="inline-flex items-center mx-auto gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]">
                         <Sparkles className="h-4 w-4" />
                         Secure Entry
                     </p>
                     <h1 className="mt-4 text-3xl font-bold leading-tight">Role-based Sign In</h1>
                     <p className="mt-3 text-sm text-slate-100">
-                        Login with JWT and access Dashboard, Students, Classes, Sessions, Realtime Attendance, and History.
+                        Sign in securely to access the dashboard, student management, classes, sessions, real-time attendance, and attendance history.
                     </p>
 
                     <div className="motion-stagger mt-5 grid gap-3">
@@ -59,29 +59,35 @@ export default function LoginPage() {
                             <p className="inline-flex items-center gap-2 text-sm font-semibold">
                                 <ShieldCheck className="h-4 w-4" /> Teacher account
                             </p>
-                            <p className="mt-1 text-sm text-slate-100">Full management access including create actions.</p>
+                            <p className="mt-1 text-sm text-slate-100">Full system access including create, update, and session management.</p>
                         </div>
                         <div className="interactive-card rounded-2xl border border-white/20 bg-white/10 p-4" data-role="student">
                             <p className="inline-flex items-center gap-2 text-sm font-semibold">
                                 <GraduationCap className="h-4 w-4" /> Student account
                             </p>
-                            <p className="mt-1 text-sm text-slate-100">Read and monitor attendance flow with restricted writes.</p>
+                            <p className="mt-1 text-sm text-slate-100">Student sign-in with personal attendance history and profile security.</p>
                         </div>
+                        {/* <div className="interactive-card rounded-2xl border border-white/20 bg-white/10 p-4" data-role="admin">
+                            <p className="inline-flex items-center gap-2 text-sm font-semibold">
+                                <ShieldCheck className="h-4 w-4" /> Admin account
+                            </p>
+                            <p className="mt-1 text-sm text-slate-100">System-wide administration, user management, and system configuration.</p>
+                        </div> */}
                     </div>
                 </aside>
 
-                <div className="motion-hero rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm sm:p-6">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">Authentication</p>
-                    <h2 className="mt-1 text-xl font-bold text-slate-900">Sign in to continue</h2>
+                <div className="m-auto motion-hero rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm sm:p-6 w-full">
+                    <p className="text-lg font-semibold uppercase tracking-[0.16em] text-slate-400">Authentication</p>
+                    <h2 className="mt-1 text-xl font-bold text-slate-900">Sign in to access the system</h2>
 
                     <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-800">Choose account mode</p>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 ">
                             <button
                                 type="button"
-                                className={`interactive-btn rounded-xl border px-3 py-3 text-left text-sm font-semibold transition ${role === "teacher"
-                                        ? "border-blue-300 bg-blue-100 text-blue-900 shadow"
-                                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                className={`interactive-btn text-center rounded-xl border px-2 py-3 text-center text-sm font-semibold transition ${role === "teacher"
+                                    ? "border-blue-300 bg-blue-100 text-blue-900 shadow"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                 onClick={() => setRole("teacher")}
                             >
@@ -89,14 +95,24 @@ export default function LoginPage() {
                             </button>
                             <button
                                 type="button"
-                                className={`interactive-btn rounded-xl border px-3 py-3 text-left text-sm font-semibold transition ${role === "student"
-                                        ? "border-indigo-300 bg-indigo-100 text-indigo-900 shadow"
-                                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                className={`interactive-btn rounded-xl text-center border px-2 py-3 text-center text-sm font-semibold transition ${role === "student"
+                                    ? "border-indigo-300 bg-indigo-100 text-indigo-900 shadow"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                 onClick={() => setRole("student")}
                             >
                                 Student mode
                             </button>
+                            {/* <button
+                                type="button"
+                                className={`interactive-btn rounded-xl text-center border px-2 py-3 text-left text-sm font-semibold transition ${role === "admin"
+                                    ? "border-emerald-300 bg-emerald-100 text-emerald-900 shadow"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                    }`}
+                                onClick={() => setRole("admin")}
+                            >
+                                Admin mode
+                            </button> */}
                         </div>
                     </div>
 
@@ -138,6 +154,14 @@ export default function LoginPage() {
                             {isLoggingIn ? "Signing in..." : "Sign In"}
                         </button>
                     </form>
+
+                    {/* <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 shadow-sm">
+                        <p className="font-semibold">Admin sign-in guide</p>
+                        <p className="mt-1">
+                            Choose <span className="font-semibold">Admin mode</span>, then sign in with a teacher account whose email is listed in backend
+                            <span className="font-semibold"> ADMIN_EMAILS</span>.
+                        </p>
+                    </div> */}
 
                     {notice && (
                         <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800 shadow-sm">

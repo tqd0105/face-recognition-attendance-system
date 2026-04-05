@@ -35,6 +35,7 @@ export default function SessionsPage() {
     const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
     const [pendingDeleteSession, setPendingDeleteSession] = useState<Session | null>(null);
     const [selectedCourseClassId, setSelectedCourseClassId] = useState("");
+    const [sessionName, setSessionName] = useState("");
     const [sessionDate, setSessionDate] = useState("");
     const [startTime, setStartTime] = useState("");
     const [endTime, setEndTime] = useState("");
@@ -122,6 +123,39 @@ export default function SessionsPage() {
         return map;
     }, [courseOptions]);
 
+    function normalizeSessionDate(value?: string): string {
+        if (!value) {
+            return "";
+        }
+        return value.includes("T") ? value.split("T")[0] ?? value : value;
+    }
+
+    function normalizeSessionTime(value?: string): string {
+        if (!value) {
+            return "";
+        }
+        return value.slice(0, 5);
+    }
+
+    function formatSessionDate(value?: string): string {
+        const normalized = normalizeSessionDate(value);
+        if (!normalized) {
+            return "-";
+        }
+
+        const parsed = new Date(`${normalized}T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            return normalized;
+        }
+
+        return new Intl.DateTimeFormat("en-GB", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            timeZone: "Asia/Ho_Chi_Minh",
+        }).format(parsed);
+    }
+
     async function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         if (!selectedCourseClassId.trim() || !sessionDate || !startTime || !endTime) {
@@ -140,9 +174,9 @@ export default function SessionsPage() {
             (item) =>
                 item.id !== editingSessionId &&
                 Number(item.course_class_id ?? item.class_id) === normalizedCourseClassId &&
-                item.session_date === sessionDate &&
-                item.start_time === startTime &&
-                item.end_time === endTime,
+                normalizeSessionDate(item.session_date) === sessionDate &&
+                normalizeSessionTime(item.start_time) === startTime &&
+                normalizeSessionTime(item.end_time) === endTime,
         );
         if (duplicatedSession) {
             setModalError("This session already exists (same class, date, and time).");
@@ -156,7 +190,7 @@ export default function SessionsPage() {
                 course_class_id: normalizedCourseClassId,
                 class_id: normalizedCourseClassId,
                 session_date: sessionDate,
-                session_name: `${sessionDate} ${startTime}-${endTime}`,
+                session_name: sessionName.trim() || `${sessionDate} ${startTime}-${endTime}`,
                 start_time: startTime,
                 end_time: endTime,
                 status: "scheduled" as const,
@@ -175,6 +209,7 @@ export default function SessionsPage() {
             }
             setEditingSessionId(null);
             setSelectedCourseClassId("");
+            setSessionName("");
             setSessionDate("");
             setStartTime("");
             setEndTime("");
@@ -192,9 +227,10 @@ export default function SessionsPage() {
         setModalError(null);
         setEditingSessionId(item.id);
         setSelectedCourseClassId(String(item.course_class_id ?? item.class_id ?? ""));
-        setSessionDate(item.session_date ? item.session_date.split("T")[0] ?? item.session_date : "");
-        setStartTime(item.start_time ? item.start_time.slice(0, 5) : "");
-        setEndTime(item.end_time ? item.end_time.slice(0, 5) : "");
+        setSessionName(item.session_name ?? "");
+        setSessionDate(normalizeSessionDate(item.session_date));
+        setStartTime(normalizeSessionTime(item.start_time));
+        setEndTime(normalizeSessionTime(item.end_time));
         setStatus(item.status ?? "scheduled");
         setIsModalOpen(true);
     }, []);
@@ -295,7 +331,7 @@ export default function SessionsPage() {
                 },
             },
             { key: "sessionName", title: "Session Name", render: (row: Session) => row.session_name ?? "Session" },
-            { key: "date", title: "Session Date", render: (row: Session) => row.session_date ?? "-" },
+            { key: "date", title: "Session Date", render: (row: Session) => formatSessionDate(row.session_date) },
             { key: "start", title: "Start Time", render: (row: Session) => row.start_time ?? "-" },
             { key: "end", title: "End Time", render: (row: Session) => row.end_time ?? "-" },
             { key: "status", title: "Status", render: (row: Session) => row.status ?? "scheduled" },
@@ -477,6 +513,7 @@ export default function SessionsPage() {
                             setModalError(null);
                             setEditingSessionId(null);
                             setSelectedCourseClassId("");
+                            setSessionName("");
                             setSessionDate("");
                             setStartTime("");
                             setEndTime("");
@@ -547,6 +584,19 @@ export default function SessionsPage() {
                             ))}
                         </select>
 
+                    </div>
+                    <div>
+                        <label className="text-sm font-semibold text-slate-700" htmlFor="session-date">
+                            Session Name
+                        </label>
+                        <input
+                            id="session-name"
+                            type="text"
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                            value={sessionName}
+                            onChange={(e) => setSessionName(e.target.value)}
+                            placeholder="e.g. Week 1 - Monday Morning"
+                        />
                     </div>
                     <div>
                         <label className="text-sm font-semibold text-slate-700" htmlFor="session-date">

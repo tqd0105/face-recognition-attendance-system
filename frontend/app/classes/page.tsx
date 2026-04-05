@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ErrorState, LoadingState } from "@/components/ui/States";
 import { classService } from "@/services/class.service";
 import type { ClassItem, CreateClassPayload } from "@/types/models";
-import { ClassIcons } from "@/components/icons";
+import { ClassIcons, HomeClassIcons } from "@/components/icons";
 
 export default function ClassesPage() {
     const router = useRouter();
@@ -168,7 +168,7 @@ export default function ClassesPage() {
             <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <header className="flex items-center gap-2 motion-hero rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-5 text-white shadow-lg sm:p-6">
                     <div>
-                        <img src={ClassIcons} width={80} height={80} alt="" />
+                        <img src={HomeClassIcons} width={80} height={80} alt="" />
                     </div>
                     <div>
                         <h1 className="mt-2 text-3xl font-bold sm:text-3xl">Home Class Management</h1>

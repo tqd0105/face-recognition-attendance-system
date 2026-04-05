@@ -27,8 +27,8 @@ export default function AttendancePage() {
     const checkedStudentIdsRef = useRef<Set<number>>(new Set());
 
     const { user } = useAuth();
-    const canManageAttendance = user.role === "teacher" && Boolean(user.token);
-    const canViewAttendance = user.role === "teacher" || user.role === "student";
+    const canManageAttendance = (user.role === "teacher" || user.role === "admin") && Boolean(user.token);
+    const canViewAttendance = user.role === "teacher" || user.role === "student" || user.role === "admin";
 
     const [sessionId, setSessionId] = useState("");
     const [studentCode, setStudentCode] = useState("");

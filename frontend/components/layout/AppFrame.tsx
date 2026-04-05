@@ -19,8 +19,19 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
 
         if (!user.token) {
             router.replace("/login");
+            return;
         }
-    }, [isHydrated, isPublic, user.token, router]);
+
+        const studentOnlyAllowed = ["/", "/history"];
+        if (user.role === "student" && !studentOnlyAllowed.includes(pathname)) {
+            router.replace("/history");
+            return;
+        }
+
+        if (user.role !== "admin" && pathname === "/admin") {
+            router.replace("/");
+        }
+    }, [isHydrated, isPublic, user.token, user.role, pathname, router]);
 
     if (!isHydrated) {
         return (
