@@ -1,6 +1,29 @@
 const pool = require('../config/db');
 const axios = require('axios');
 
+function isPrivilegedRole(role) {
+    const normalized = String(role || '').toLowerCase();
+    return normalized === 'teacher' || normalized === 'admin';
+}
+
+function ensureStudentAccess(req, res, targetStudentId) {
+    const role = String(req.user?.role || '').toLowerCase();
+    const actorId = Number(req.user?.id);
+    const targetId = Number(targetStudentId);
+
+    if (!Number.isFinite(targetId) || targetId <= 0) {
+        res.status(400).json({ message: 'Invalid student id' });
+        return false;
+    }
+
+    if (role === 'student' && actorId !== targetId) {
+        res.status(403).json({ message: 'Students can only access their own attendance data' });
+        return false;
+    }
+
+    return true;
+}
+
 function resolveAiConfig() {
     return {
         aiServiceUrl: process.env.AI_SERVICE_URL || 'http://localhost:8000',
@@ -450,6 +473,10 @@ exports.checkInOneFace = async (req, res) => {
 exports.getAttendanceBySession = async (req, res) => {
     const { session_id } = req.params;
 
+    if (!isPrivilegedRole(req.user?.role)) {
+        return res.status(403).json({ message: 'Access denied: insufficient permissions' });
+    }
+
     try {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.set('Pragma', 'no-cache');
@@ -496,6 +523,10 @@ exports.getAttendanceBySession = async (req, res) => {
 exports.updateAttendanceStatus = async (req, res) => {
     const { session_id, student_id, new_status } = req.body;
 
+    if (!isPrivilegedRole(req.user?.role)) {
+        return res.status(403).json({ message: 'Access denied: insufficient permissions' });
+    }
+
     try {
         const result = await pool.query(
             `UPDATE Attendance 
@@ -525,6 +556,10 @@ exports.updateAttendanceStatus = async (req, res) => {
 // @access  Private
 exports.getAttendanceReport = async (req, res) => {
     const { course_class_id } = req.params;
+
+    if (!isPrivilegedRole(req.user?.role)) {
+        return res.status(403).json({ message: 'Access denied: insufficient permissions' });
+    }
 
     try {
         const reportQuery = `
@@ -587,6 +622,10 @@ exports.getStudentAttendanceHistory = async (req, res) => {
     const { student_id } = req.params;
     const { course_class_id } = req.query;
 
+    if (!ensureStudentAccess(req, res, student_id)) {
+        return;
+    }
+
     try {
         let query = `
             SELECT a.id AS attendance_id, a.status, a.check_in_time, 
@@ -618,11 +657,24 @@ exports.getStudentAttendanceHistory = async (req, res) => {
     }
 };
 
+// @desc    Sinh viên xem lịch sử điểm danh của chính mình
+// @route   GET /api/attendance/me
+// @access  Private (student)
+exports.getMyAttendanceHistory = async (req, res) => {
+    const studentId = Number(req.user?.id);
+    req.params.student_id = String(studentId);
+    return exports.getStudentAttendanceHistory(req, res);
+};
+
 // @desc    Giảng viên điểm danh thủ công (Dùng khi AI không nhận diện được)
 // @route   POST /api/attendance/manual
 // @access  Private
 exports.manualCheckIn = async (req, res) => {
     const { session_id, student_id, status } = req.body;
+
+    if (!isPrivilegedRole(req.user?.role)) {
+        return res.status(403).json({ message: 'Access denied: insufficient permissions' });
+    }
 
     try {
         const result = await pool.query(
@@ -651,6 +703,10 @@ exports.manualCheckIn = async (req, res) => {
 exports.updateAttendanceById = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
+
+    if (!isPrivilegedRole(req.user?.role)) {
+        return res.status(403).json({ message: 'Access denied: insufficient permissions' });
+    }
 
     try {
         const result = await pool.query(

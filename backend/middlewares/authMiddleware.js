@@ -19,4 +19,16 @@ const protect = async (req, res, next) => {
     }
 };
 
-module.exports = { protect };
+const authorizeRoles = (...roles) => {
+    const allowed = roles.map((role) => String(role).toLowerCase());
+
+    return (req, res, next) => {
+        const role = String(req.user?.role || '').toLowerCase();
+        if (!role || !allowed.includes(role)) {
+            return res.status(403).json({ message: 'Access denied: insufficient permissions' });
+        }
+        next();
+    };
+};
+
+module.exports = { protect, authorizeRoles };

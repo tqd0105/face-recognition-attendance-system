@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { getSessions, createSession, updateSession, startSession, stopSession, cancelSession, deleteSession } = require('../controllers/sessionController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 router.use(protect);
+router.use(authorizeRoles('teacher', 'admin'));
 
 router.route('/')
 	.get(getSessions)

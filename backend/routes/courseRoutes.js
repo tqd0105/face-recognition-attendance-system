@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { getCourseClasses, getCourseClassById, createCourseClass, updateCourseClass, enrollStudents, getEnrolledStudents, deleteCourseClass } = require('../controllers/courseController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 router.use(protect);
+router.use(authorizeRoles('teacher', 'admin'));
 
 router.route('/')
     .get(getCourseClasses)

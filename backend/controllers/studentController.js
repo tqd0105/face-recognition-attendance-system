@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const bcrypt = require('bcryptjs');
 
 // @desc    Lấy danh sách sinh viên (hỗ trợ lọc theo lớp)
 // @route   GET /api/students
@@ -49,10 +50,13 @@ exports.createStudent = async (req, res) => {
             return res.status(400).json({ message: 'Student code or email already exists in the system!' });
         }
 
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(String(student_code), salt);
+
         const newStudent = await pool.query(
-            `INSERT INTO Student (student_code, name, email, home_class_id) 
-            VALUES ($1, $2, $3, $4) RETURNING *`,
-            [student_code, name, email, home_class_id]
+            `INSERT INTO Student (student_code, name, email, home_class_id, password_hash) 
+            VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [student_code, name, email, home_class_id, passwordHash]
         );
 
         res.status(201).json({

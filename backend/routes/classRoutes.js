@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { getClass, createClass, updateClass, deleteClass } = require('../controllers/classController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 router.use(protect);
+router.use(authorizeRoles('teacher', 'admin'));
 
 router.route('/')
     .get(getClass)

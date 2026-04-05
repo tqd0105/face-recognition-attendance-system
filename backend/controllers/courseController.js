@@ -8,10 +8,12 @@ exports.getCourseClasses = async (req, res) => {
         const result = await pool.query(
             `SELECT
                 cc.*,
+                     t.teacher_code,
                 hc_direct.class_code AS home_class_code,
                 COALESCE(ec.enrolled_count, 0) AS enrolled_count,
                 COALESCE(hc.home_class_breakdown, '[]'::json) AS home_class_breakdown
              FROM Course_classes cc
+                 LEFT JOIN Teacher t ON t.id = cc.teacher_id
              LEFT JOIN Home_class hc_direct ON hc_direct.id = cc.home_class_id
              LEFT JOIN (
                 SELECT
@@ -64,8 +66,9 @@ exports.getCourseClassById = async (req, res) => {
         const { id } = req.params;
 
         const result = await pool.query(
-            `SELECT cc.*, hc.class_code AS home_class_code
+            `SELECT cc.*, t.teacher_code, hc.class_code AS home_class_code
              FROM Course_classes cc
+             LEFT JOIN Teacher t ON t.id = cc.teacher_id
              LEFT JOIN Home_class hc ON hc.id = cc.home_class_id
              WHERE cc.id = $1 AND cc.teacher_id = $2`,
             [id, req.user.id]

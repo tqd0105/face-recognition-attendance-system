@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS Student (
     student_code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255),
     home_class_id INTEGER REFERENCES Home_class(id) ON DELETE SET NULL,
     status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
