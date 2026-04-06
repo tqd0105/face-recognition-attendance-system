@@ -9,6 +9,7 @@ const {
     getAttendanceReport,
     getStudentAttendanceHistory,
     getMyAttendanceHistory,
+    getMyDashboard,
     manualCheckIn,
     updateAttendanceById
 } = require('../controllers/attendanceController');
@@ -24,6 +25,7 @@ router.post('/manual', authorizeRoles('teacher', 'admin'), manualCheckIn)
 router.get('/session/:session_id', getAttendanceBySession);
 router.get('/student/:student_id', getStudentAttendanceHistory);
 router.get('/me', authorizeRoles('student'), getMyAttendanceHistory);
+router.get('/me/dashboard', authorizeRoles('student'), getMyDashboard);
 router.get('/report/:course_class_id', getAttendanceReport);
 
 router.put('/update-status', authorizeRoles('teacher', 'admin'), updateAttendanceStatus);

@@ -666,6 +666,195 @@ exports.getMyAttendanceHistory = async (req, res) => {
     return exports.getStudentAttendanceHistory(req, res);
 };
 
+// @desc    Sinh viên xem dashboard cá nhân (today + timetable + summary)
+// @route   GET /api/attendance/me/dashboard
+// @access  Private (student)
+exports.getMyDashboard = async (req, res) => {
+    const studentId = Number(req.user?.id);
+
+    if (!Number.isFinite(studentId) || studentId <= 0) {
+        return res.status(401).json({ message: 'Invalid student session' });
+    }
+
+    const from = String(req.query?.from || '').trim();
+    const to = String(req.query?.to || '').trim();
+
+    const timetableFrom = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null;
+    const timetableTo = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : null;
+
+    try {
+        const todayRows = await pool.query(
+            `SELECT
+                se.id AS session_id,
+                se.session_date,
+                se.start_time,
+                se.end_time,
+                se.status AS session_status,
+                cc.id AS course_class_id,
+                cc.course_code,
+                cc.course_name,
+                t.teacher_name,
+                a.id AS attendance_id,
+                a.status AS attendance_status,
+                a.check_in_time,
+                CASE
+                    WHEN se.status = 'canceled' THEN 'canceled'
+                    WHEN a.status IS NOT NULL THEN a.status::text
+                    WHEN (se.session_date + se.end_time) < (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') THEN 'absent'
+                    WHEN (se.session_date + se.start_time) <= (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+                         AND (se.session_date + se.end_time) >= (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') THEN 'ongoing'
+                    ELSE 'upcoming'
+                END AS display_status
+            FROM Enrollments e
+            JOIN Session se ON se.course_class_id = e.course_class_id
+            JOIN Course_classes cc ON cc.id = se.course_class_id
+            LEFT JOIN Teacher t ON t.id = cc.teacher_id
+            LEFT JOIN Attendance a ON a.session_id = se.id AND a.student_id = e.student_id
+            WHERE e.student_id = $1
+              AND se.session_date = (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+            ORDER BY se.start_time ASC`,
+            [studentId]
+        );
+
+        const timetableRows = await pool.query(
+            `SELECT
+                se.id AS session_id,
+                se.session_date,
+                se.start_time,
+                se.end_time,
+                se.status AS session_status,
+                cc.id AS course_class_id,
+                cc.course_code,
+                cc.course_name,
+                t.teacher_name,
+                a.status AS attendance_status,
+                a.check_in_time
+            FROM Enrollments e
+            JOIN Session se ON se.course_class_id = e.course_class_id
+            JOIN Course_classes cc ON cc.id = se.course_class_id
+            LEFT JOIN Teacher t ON t.id = cc.teacher_id
+            LEFT JOIN Attendance a ON a.session_id = se.id AND a.student_id = e.student_id
+            WHERE e.student_id = $1
+              AND se.session_date BETWEEN COALESCE($2::date, (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)
+                                  AND COALESCE($3::date, ((NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date + INTERVAL '14 day')::date)
+            ORDER BY se.session_date ASC, se.start_time ASC`,
+            [studentId, timetableFrom, timetableTo]
+        );
+
+        const summaryRows = await pool.query(
+            `SELECT
+                se.id AS session_id,
+                se.status AS session_status,
+                cc.id AS course_class_id,
+                cc.course_code,
+                cc.course_name,
+                a.status AS attendance_status
+            FROM Enrollments e
+            JOIN Session se ON se.course_class_id = e.course_class_id
+            JOIN Course_classes cc ON cc.id = se.course_class_id
+            LEFT JOIN Attendance a ON a.session_id = se.id AND a.student_id = e.student_id
+            WHERE e.student_id = $1
+              AND se.status <> 'canceled'
+              AND (se.session_date + se.end_time) <= (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+            ORDER BY se.session_date DESC, se.start_time DESC`,
+            [studentId]
+        );
+
+        const summarySeed = {
+            total_sessions: 0,
+            attended_sessions: 0,
+            present_count: 0,
+            late_count: 0,
+            excused_count: 0,
+            absent_count: 0,
+        };
+
+        const summary = summaryRows.rows.reduce((acc, row) => {
+            const attendanceStatus = String(row.attendance_status || '').toLowerCase();
+            acc.total_sessions += 1;
+
+            if (attendanceStatus === 'present') {
+                acc.present_count += 1;
+                acc.attended_sessions += 1;
+            } else if (attendanceStatus === 'late') {
+                acc.late_count += 1;
+                acc.attended_sessions += 1;
+            } else if (attendanceStatus === 'excused') {
+                acc.excused_count += 1;
+                acc.attended_sessions += 1;
+            } else {
+                acc.absent_count += 1;
+            }
+
+            return acc;
+        }, summarySeed);
+
+        const attendanceRate = summary.total_sessions > 0
+            ? Number(((summary.attended_sessions / summary.total_sessions) * 100).toFixed(2))
+            : 0;
+
+        const byCourseMap = new Map();
+        for (const row of summaryRows.rows) {
+            const key = Number(row.course_class_id);
+            if (!byCourseMap.has(key)) {
+                byCourseMap.set(key, {
+                    course_class_id: key,
+                    course_code: row.course_code,
+                    course_name: row.course_name,
+                    total_sessions: 0,
+                    attended_sessions: 0,
+                    absent_count: 0,
+                    attendance_rate: 0,
+                });
+            }
+
+            const item = byCourseMap.get(key);
+            const attendanceStatus = String(row.attendance_status || '').toLowerCase();
+            item.total_sessions += 1;
+            if (attendanceStatus === 'present' || attendanceStatus === 'late' || attendanceStatus === 'excused') {
+                item.attended_sessions += 1;
+            } else {
+                item.absent_count += 1;
+            }
+        }
+
+        const course_stats = Array.from(byCourseMap.values()).map((item) => ({
+            ...item,
+            attendance_rate: item.total_sessions > 0
+                ? Number(((item.attended_sessions / item.total_sessions) * 100).toFixed(2))
+                : 0,
+        }));
+
+        const checkedInCount = todayRows.rows.filter((row) => {
+            const status = String(row.attendance_status || '').toLowerCase();
+            return status === 'present' || status === 'late' || status === 'excused';
+        }).length;
+
+        return res.status(200).json({
+            today: {
+                date: new Date().toISOString().slice(0, 10),
+                total_sessions: todayRows.rows.length,
+                checked_in_sessions: checkedInCount,
+                remaining_sessions: Math.max(todayRows.rows.length - checkedInCount, 0),
+                sessions: todayRows.rows,
+            },
+            timetable: {
+                from: timetableFrom,
+                to: timetableTo,
+                sessions: timetableRows.rows,
+            },
+            summary: {
+                ...summary,
+                attendance_rate: attendanceRate,
+            },
+            course_stats,
+        });
+    } catch (error) {
+        console.error(error.message);
+        return res.status(500).json({ message: 'Server error while loading student dashboard' });
+    }
+};
+
 // @desc    Giảng viên điểm danh thủ công (Dùng khi AI không nhận diện được)
 // @route   POST /api/attendance/manual
 // @access  Private
