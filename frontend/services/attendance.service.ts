@@ -1,7 +1,13 @@
 import { http } from "@/services/http";
 import axios from "axios";
 import { sessionService } from "@/services/session.service";
-import type { AttendanceItem, AttendancePayload, RealtimeRecognizeResponse, StudentAttendanceHistoryItem } from "@/types/models";
+import type {
+  AttendanceItem,
+  AttendancePayload,
+  RealtimeRecognizeResponse,
+  StudentAttendanceHistoryItem,
+  StudentDashboardResponse,
+} from "@/types/models";
 
 const ATTENDANCE_CACHE_KEY = "fras_attendance_cache";
 
@@ -243,6 +249,13 @@ export const attendanceService = {
     }
 
     return Array.isArray(data?.data) ? data.data : [];
+  },
+
+  async getMyDashboard(range?: { from?: string; to?: string }): Promise<StudentDashboardResponse> {
+    const { data } = await http.get<StudentDashboardResponse>("/api/attendance/me/dashboard", {
+      params: range,
+    });
+    return data;
   },
 
   async updateById(id: string, status: string): Promise<AttendanceItem> {

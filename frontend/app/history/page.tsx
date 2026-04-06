@@ -100,7 +100,7 @@ export default function HistoryPage() {
                 </div>
 
                 <div className="mt-3">
-                    <p className="ml-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">List History</p>
+                    <p className="ml-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Attendance Records</p>
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">

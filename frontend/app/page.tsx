@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import {
+    AlertTriangle,
     CalendarClock,
     ClipboardList,
     Database,
@@ -19,6 +20,7 @@ import { sessionService } from "@/services/session.service";
 import { studentService } from "@/services/student.service";
 import { FaceIdIcons, WebcamIcons, WebcamLiveIcons, StudentIcons, ClassIcons, SessionIcons, HistoryIcons, HomeClassIcons } from "@/components/icons";
 import { ErrorState, LoadingState } from "@/components/ui/States";
+import type { StudentDashboardResponse } from "@/types/models";
 
 type DashboardCard = {
     title: string;
@@ -112,6 +114,24 @@ function BadgeIcon({ name }: { name: string }) {
     return <Database className="h-7 w-7 text-slate-700" />;
 }
 
+function formatSessionDate(value?: string): string {
+    if (!value) {
+        return "-";
+    }
+
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+        return new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Ho_Chi_Minh",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(parsed);
+    }
+
+    return String(value).slice(0, 10);
+}
+
 export default function DashboardPage() {
     const { user } = useAuth();
     const visibleCards = useMemo(() => {
@@ -127,6 +147,9 @@ export default function DashboardPage() {
     const [kpi, setKpi] = useState({ totalStudents: 0, activeSessions: 0, checkedInToday: 0, lateToday: 0 });
     const [isKpiLoading, setIsKpiLoading] = useState(true);
     const [kpiError, setKpiError] = useState<string | null>(null);
+    const [studentDashboard, setStudentDashboard] = useState<StudentDashboardResponse | null>(null);
+    const [isStudentDashboardLoading, setIsStudentDashboardLoading] = useState(false);
+    const [studentDashboardError, setStudentDashboardError] = useState<string | null>(null);
 
     useEffect(() => {
         async function loadTeacherKpi() {
@@ -179,6 +202,46 @@ export default function DashboardPage() {
         void loadTeacherKpi();
     }, [user.role]);
 
+    useEffect(() => {
+        async function loadStudentDashboard() {
+            if (user.role !== "student") {
+                setIsStudentDashboardLoading(false);
+                setStudentDashboard(null);
+                return;
+            }
+
+            try {
+                setIsStudentDashboardLoading(true);
+                setStudentDashboardError(null);
+                const data = await attendanceService.getMyDashboard();
+                setStudentDashboard(data);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Unable to load student dashboard";
+                setStudentDashboardError(message);
+            } finally {
+                setIsStudentDashboardLoading(false);
+            }
+        }
+
+        void loadStudentDashboard();
+    }, [user.role]);
+
+    const todayList = studentDashboard?.today.sessions ?? [];
+    const timetableList = studentDashboard?.timetable.sessions ?? [];
+    const summary = studentDashboard?.summary;
+    const riskCourses = (studentDashboard?.course_stats ?? []).filter((item) => item.attendance_rate < 80);
+
+    const statusBadgeClass = (status: string) => {
+        const normalized = String(status || "").toLowerCase();
+        if (normalized === "present") return "bg-emerald-50 text-emerald-700 border border-emerald-200";
+        if (normalized === "late") return "bg-amber-50 text-amber-700 border border-amber-200";
+        if (normalized === "excused") return "bg-sky-50 text-sky-700 border border-sky-200";
+        if (normalized === "ongoing") return "bg-indigo-50 text-indigo-700 border border-indigo-200";
+        if (normalized === "upcoming") return "bg-slate-100 text-slate-700 border border-slate-200";
+        if (normalized === "canceled") return "bg-rose-50 text-rose-700 border border-rose-200";
+        return "bg-rose-50 text-rose-700 border border-rose-200";
+    };
+
     return (
         <main className="motion-page min-h-screen px-1 py-1 sm:px-2">
             <section className="rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.45)] sm:p-6">
@@ -189,7 +252,7 @@ export default function DashboardPage() {
                         </div>
                         <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">Face Recognition Attendance System</p>
-                            <h1 className="text-2xl font-bold sm:text-4xl">Overview Functions </h1>
+                            <h1 className="text-2xl font-bold sm:text-4xl">System Overview</h1>
                         </div>
                     </div>
 
@@ -242,6 +305,128 @@ export default function DashboardPage() {
                                 <article className="interactive-card rounded-2xl border border-amber-100 bg-amber-50 p-4 shadow-sm">
                                     <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700"><Flame className="h-4 w-4" /> Late Today</p>
                                     <p className="mt-2 text-2xl font-bold text-amber-900">{kpi.lateToday}</p>
+                                </article>
+                            </>
+                        )}
+                    </section>
+                )}
+
+                {user.role === "student" && (
+                    <section className="motion-stagger mt-4 space-y-4">
+                        {isStudentDashboardLoading ? (
+                            <LoadingState label="Loading your attendance dashboard..." />
+                        ) : studentDashboardError ? (
+                            <ErrorState label={studentDashboardError} />
+                        ) : (
+                            <>
+                                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                    <article className="interactive-card rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
+                                        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700"><CalendarClock className="h-4 w-4" /> Today Sessions</p>
+                                        <p className="mt-2 text-2xl font-bold text-indigo-900">{studentDashboard?.today.total_sessions ?? 0}</p>
+                                    </article>
+                                    <article className="interactive-card rounded-2xl border border-emerald-100 bg-emerald-50 p-4 shadow-sm">
+                                        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700"><UserCheck className="h-4 w-4" /> Checked In</p>
+                                        <p className="mt-2 text-2xl font-bold text-emerald-900">{studentDashboard?.today.checked_in_sessions ?? 0}</p>
+                                    </article>
+                                    <article className="interactive-card rounded-2xl border border-rose-100 bg-rose-50 p-4 shadow-sm">
+                                        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-700"><ClipboardList className="h-4 w-4" /> Remaining</p>
+                                        <p className="mt-2 text-2xl font-bold text-rose-900">{studentDashboard?.today.remaining_sessions ?? 0}</p>
+                                    </article>
+                                    <article className="interactive-card rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+                                        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700"><Flame className="h-4 w-4" /> Attendance Rate</p>
+                                        <p className="mt-2 text-2xl font-bold text-blue-900">{summary?.attendance_rate ?? 0}%</p>
+                                    </article>
+                                </div>
+
+                                <div className="grid gap-4 xl:grid-cols-3">
+                                    <article className="xl:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-600">Today Attendance</h2>
+                                            <Link href="/history" className="text-xs font-semibold text-indigo-700 hover:underline">View Full History</Link>
+                                        </div>
+                                        <div className="mt-3 space-y-2">
+                                            {todayList.length === 0 ? (
+                                                <p className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-5 text-sm text-slate-500">No session scheduled for today.</p>
+                                            ) : (
+                                                todayList.map((item) => (
+                                                    <div key={item.session_id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                                            <p className="text-sm font-semibold text-slate-900">
+                                                                {item.course_code ? `${item.course_code} - ${item.course_name ?? ""}` : item.course_name ?? "Course"}
+                                                            </p>
+                                                            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(item.display_status ?? item.attendance_status ?? "absent")}`}>
+                                                                {String(item.display_status ?? item.attendance_status ?? "absent").toUpperCase()}
+                                                            </span>
+                                                        </div>
+                                                        <p className="mt-1 text-xs text-slate-500">
+                                                            {formatSessionDate(item.session_date)} | {String(item.start_time).slice(0, 5)} - {String(item.end_time).slice(0, 5)}
+                                                        </p>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </article>
+
+                                    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                                        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-600">Statistics</h2>
+                                        <div className="mt-3 grid gap-2 text-sm">
+                                            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"><span>Total Completed Sessions</span><b>{summary?.total_sessions ?? 0}</b></div>
+                                            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"><span>Present</span><b>{summary?.present_count ?? 0}</b></div>
+                                            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"><span>Late</span><b>{summary?.late_count ?? 0}</b></div>
+                                            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"><span>Excused</span><b>{summary?.excused_count ?? 0}</b></div>
+                                            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"><span>Absent</span><b>{summary?.absent_count ?? 0}</b></div>
+                                        </div>
+
+                                        <div className="mt-4">
+                                            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Risk Courses (&lt; 80%)</h3>
+                                            <div className="mt-2 space-y-2">
+                                                {riskCourses.length === 0 ? (
+                                                    <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">No risk courses. Keep it up.</p>
+                                                ) : (
+                                                    riskCourses.map((item) => (
+                                                        <div key={item.course_class_id} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                                            <p className="font-semibold inline-flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> {item.course_code} - {item.course_name}</p>
+                                                            <p className="mt-1">Rate: {item.attendance_rate}% | Absent: {item.absent_count}</p>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    </article>
+                                </div>
+
+                                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                                    <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-600">My Timetable (Next 14 days)</h2>
+                                    <div className="mt-3 overflow-x-auto">
+                                        <table className="min-w-[720px] w-full divide-y divide-slate-200 text-sm">
+                                            <thead className="bg-slate-100">
+                                                <tr>
+                                                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Date</th>
+                                                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Time</th>
+                                                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Course</th>
+                                                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Teacher</th>
+                                                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Attendance</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 bg-white">
+                                                {timetableList.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={5} className="px-3 py-5 text-sm text-slate-500">No sessions in the selected window.</td>
+                                                    </tr>
+                                                ) : (
+                                                    timetableList.map((item) => (
+                                                        <tr key={`${item.session_id}-${item.session_date}`}>
+                                                            <td className="px-3 py-2 text-slate-700">{formatSessionDate(item.session_date)}</td>
+                                                            <td className="px-3 py-2 text-slate-700">{String(item.start_time).slice(0, 5)} - {String(item.end_time).slice(0, 5)}</td>
+                                                            <td className="px-3 py-2 text-slate-700">{item.course_code ? `${item.course_code} - ${item.course_name ?? ""}` : item.course_name ?? "-"}</td>
+                                                            <td className="px-3 py-2 text-slate-700">{item.teacher_name ?? "-"}</td>
+                                                            <td className="px-3 py-2 text-slate-700">{item.attendance_status ?? "-"}</td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </article>
                             </>
                         )}

@@ -99,6 +99,7 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
     const effectiveEmail = profile?.email ?? teacherMeta.email ?? "N/A";
     const effectiveTeacherCode = profile?.teacher_code ?? teacherMeta.teacher_code ?? "N/A";
     const effectiveStudentCode = profile?.student_code ?? teacherMeta.student_code ?? "N/A";
+    const profileSubtitle = user.role === "student" ? "Student Portal" : "Realtime Attendance Instructor";
     const nameInitials = useMemo(() => {
         const parts = user.displayName
             .trim()
@@ -137,7 +138,7 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
         <div className="min-h-screen bg-slate-100">
             <div className="mx-auto flex w-full max-w-[1440px] gap-4 px-4 py-8 sm:px-6 lg:px-8">
                 <aside className="hidden w-[270px] h-full shrink-0 rounded-3xl border border-slate-200 bg-white px-4 py-6 shadow-sm lg:block">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 text-center" >Attendance System use</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 text-center" >Attendance System</p>
                     <h3 className="mt-0 text-xl font-bold text-slate-900 uppercase text-center">Face Recognition</h3>
 
                     <nav className="mt-5 grid gap-2">
@@ -284,7 +285,7 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
                             <div className="grid h-12 w-12 place-items-center rounded-full bg-white/15 font-bold">{nameInitials}</div>
                             <div className="min-w-0">
                                 <p className="truncate text-lg font-bold">{user.displayName}</p>
-                                <p className="truncate text-sm text-cyan-100">Realtime Attendance Instructor</p>
+                                <p className="truncate text-sm text-cyan-100">{profileSubtitle}</p>
                             </div>
                         </div>
                     </div>
@@ -351,7 +352,7 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
                                                 setNewPassword("");
                                                 setPasswordNotice("Password changed successfully.");
                                             } catch (error) {
-                                                const message = error instanceof Error ? error.message : "Cannot change password";
+                                                const message = error instanceof Error ? error.message : "Unable to change password right now.";
                                                 setPasswordNotice(message);
                                             } finally {
                                                 setIsChangingPassword(false);

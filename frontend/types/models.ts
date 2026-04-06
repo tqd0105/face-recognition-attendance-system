@@ -146,6 +146,59 @@ export type StudentAttendanceHistoryItem = {
   course_code?: string;
 };
 
+export type StudentDashboardSessionItem = {
+  session_id: number;
+  session_date: string;
+  start_time: string;
+  end_time: string;
+  session_status?: string;
+  course_class_id: number;
+  course_code?: string;
+  course_name?: string;
+  teacher_name?: string;
+  attendance_id?: number;
+  attendance_status?: string;
+  check_in_time?: string;
+  display_status?: string;
+};
+
+export type StudentDashboardSummary = {
+  total_sessions: number;
+  attended_sessions: number;
+  present_count: number;
+  late_count: number;
+  excused_count: number;
+  absent_count: number;
+  attendance_rate: number;
+};
+
+export type StudentDashboardCourseStat = {
+  course_class_id: number;
+  course_code?: string;
+  course_name?: string;
+  total_sessions: number;
+  attended_sessions: number;
+  absent_count: number;
+  attendance_rate: number;
+};
+
+export type StudentDashboardResponse = {
+  today: {
+    date: string;
+    total_sessions: number;
+    checked_in_sessions: number;
+    remaining_sessions: number;
+    sessions: StudentDashboardSessionItem[];
+  };
+  timetable: {
+    from?: string | null;
+    to?: string | null;
+    sessions: StudentDashboardSessionItem[];
+  };
+  summary: StudentDashboardSummary;
+  course_stats: StudentDashboardCourseStat[];
+};
+
 export type RealtimeDetection = {
   status: "matched" | "rejected" | "unknown";
   student_id: number | null;
