@@ -23,11 +23,13 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+backend/.env
 
 # ------------------------------
 # Node / Next.js
 # ------------------------------
 node_modules/
+backend/node_modules/
 .next/
 out/
 dist/
@@ -59,8 +61,4 @@ tmp/
 # ------------------------------
 ai-service/.venv/
 ai-service/__pycache__/
-
-node_modules/
-backend/node_modules/
-.env
-backend/.env
+postgres_data/

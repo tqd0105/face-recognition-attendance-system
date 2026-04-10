@@ -4,7 +4,7 @@ const pool = require('../config/db');
 // @route   POST /api/enrollments
 // @access  Private
 exports.enrollStudent = async (req, res) => {
-    const {student_id, course_class_id} = req.body;
+    const { student_id, course_class_id } = req.body;
 
     try {
         const checkExist = await pool.query(
@@ -13,17 +13,17 @@ exports.enrollStudent = async (req, res) => {
         );
 
         if (checkExist.rows.length > 0) {
-            return res.status(400).json({message: 'Sinh viên này đã có trong danh sách lớp!'});
+            return res.status(400).json({ message: 'This student is already enrolled in the class!' });
         }
 
         await pool.query(
             'INSERT INTO Enrollments (student_id, course_class_id) VALUES ($1, $2)',
             [student_id, course_class_id]
         );
-        res.status(201).json({message: 'Thêm sinh viên vào Lớp học phần thành công!'});
+        res.status(201).json({ message: 'Student enrolled to course class successfully!' });
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({ message: 'Lỗi server khi đăng ký sinh viên' });
+        res.status(500).json({ message: 'Server error while enrolling student' });
     }
 };
 
@@ -31,7 +31,7 @@ exports.enrollStudent = async (req, res) => {
 // @route   GET /api/enrollments/:course_id
 // @access  Private
 exports.getEnrolledStudents = async (req, res) => {
-    const {course_id} = req.params;
+    const { course_id } = req.params;
 
     try {
         const result = await pool.query(
@@ -45,6 +45,6 @@ exports.getEnrolledStudents = async (req, res) => {
         res.json(result.rows);
     } catch (error) {
         console.error(error.message);
-        res.status(500).json({message: 'Lỗi server khi lấy danh sách sinh viên'});
+        res.status(500).json({ message: 'Server error while fetching enrolled students' });
     }
 };

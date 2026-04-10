@@ -3,7 +3,7 @@ CREATE SCHEMA public;
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE TYPE attendance_status AS ENUM ('present', 'absent', 'late');
+CREATE TYPE attendance_status AS ENUM ('present', 'absent', 'late', 'excused');
 
 CREATE TYPE session_status AS ENUM ('scheduled', 'active', 'completed', 'canceled');
 
@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS Student (
     student_code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255),
     home_class_id INTEGER REFERENCES Home_class(id) ON DELETE SET NULL,
     status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS Course_classes (
     id SERIAL PRIMARY KEY,
     course_code VARCHAR(50) UNIQUE NOT NULL,
     course_name VARCHAR(100) NOT NULL,
+    home_class_id INTEGER REFERENCES Home_class(id) ON DELETE SET NULL,
     teacher_id INTEGER REFERENCES Teacher(id) ON DELETE SET NULL,
     semester VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
