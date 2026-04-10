@@ -57,13 +57,13 @@ exports.getSessions = async (req, res) => {
 // @route   POST /api/sessions
 // @access  Private
 exports.createSession = async (req, res) => {
-	const { course_class_id, session_date, start_time, end_time, status } = req.body;
+	const { course_class_id, session_name, session_date, start_time, end_time, status } = req.body;
 
 	try {
 		const newSession = await pool.query(
-			`INSERT INTO Session (course_class_id, session_date, start_time, end_time, status) 
-						VALUES ($1, $2, $3, $4, COALESCE($5::session_status, 'scheduled'::session_status)) RETURNING *`,
-			[course_class_id, session_date, start_time, end_time, status]
+			`INSERT INTO Session (course_class_id, session_name, session_date, start_time, end_time, status) 
+						VALUES ($1, $2, $3, $4, $5, COALESCE($6::session_status, 'scheduled'::session_status)) RETURNING *`,
+			[course_class_id, session_name || null, session_date, start_time, end_time, status]
 		);
 
 		res.status(201).json({
@@ -84,7 +84,7 @@ exports.createSession = async (req, res) => {
 // @access  Private
 exports.updateSession = async (req, res) => {
 	const { id } = req.params;
-	const { course_class_id, session_date, start_time, end_time, status } = req.body;
+	const { course_class_id, session_name, session_date, start_time, end_time, status } = req.body;
 
 	try {
 		const existing = await pool.query('SELECT id, status FROM Session WHERE id = $1', [id]);
@@ -104,13 +104,14 @@ exports.updateSession = async (req, res) => {
 		const updated = await pool.query(
 			`UPDATE Session
 			 SET course_class_id = $1,
-			     session_date = $2,
-			     start_time = $3,
-			     end_time = $4,
-			     status = COALESCE($5::session_status, status)
-			 WHERE id = $6
+			     session_name = $2,
+			     session_date = $3,
+			     start_time = $4,
+			     end_time = $5,
+			     status = COALESCE($6::session_status, status)
+			 WHERE id = $7
 			 RETURNING *`,
-			[course_class_id, session_date, start_time, end_time, status, id]
+			[course_class_id, session_name || null, session_date, start_time, end_time, status, id]
 		);
 
 		return res.status(200).json({
