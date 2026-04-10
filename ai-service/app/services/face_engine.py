@@ -68,6 +68,7 @@ class FaceEngine:
         min_similarity: float,
     ) -> list[dict[str, Any]]:
         image = self._decode_image_bytes(image_bytes)
+        image_height, image_width = image.shape[:2]
         app = self._ensure_model()
         faces = app.get(image)
 
@@ -79,6 +80,11 @@ class FaceEngine:
         for face in faces:
             probe_embedding = np.array(face.normed_embedding, dtype=float).tolist()
             bbox = [int(v) for v in face.bbox.tolist()]
+            x1, y1, x2, y2 = bbox
+            face_width = max(x2 - x1, 1)
+            face_height = max(y2 - y1, 1)
+            face_area_ratio = float((face_width * face_height) / max(image_width * image_height, 1))
+            quality_score = float(getattr(face, 'det_score', 0.0))
 
             best_student_id: str | None = None
             best_similarity = -1.0
@@ -94,6 +100,8 @@ class FaceEngine:
                     {
                         'student_id': best_student_id,
                         'similarity': round(best_similarity, 4),
+                        'quality_score': round(quality_score, 4),
+                        'face_area_ratio': round(face_area_ratio, 4),
                         'bbox': bbox,
                         'status': 'matched',
                     }
@@ -103,6 +111,8 @@ class FaceEngine:
                     {
                         'student_id': None,
                         'similarity': round(max(best_similarity, 0.0), 4),
+                        'quality_score': round(quality_score, 4),
+                        'face_area_ratio': round(face_area_ratio, 4),
                         'bbox': bbox,
                         'status': 'unknown',
                     }
