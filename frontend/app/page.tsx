@@ -20,7 +20,7 @@ import { sessionService } from "@/services/session.service";
 import { studentService } from "@/services/student.service";
 import { FaceIdIcons, WebcamIcons, WebcamLiveIcons, StudentIcons, ClassIcons, SessionIcons, HistoryIcons, HomeClassIcons } from "@/components/icons";
 import { ErrorState, LoadingState } from "@/components/ui/States";
-import type { StudentDashboardResponse } from "@/types/models";
+import type { StudentDashboardResponse, StudentDashboardSessionItem } from "@/types/models";
 
 type DashboardCard = {
     title: string;
@@ -130,6 +130,44 @@ function formatSessionDate(value?: string): string {
     }
 
     return String(value).slice(0, 10);
+}
+
+function formatSessionTime(value?: string): string {
+    if (!value) {
+        return "--:--";
+    }
+
+    const raw = String(value).trim();
+    const match = raw.match(/^(\d{2}:\d{2})/);
+    if (match) {
+        return match[1];
+    }
+
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+        return new Intl.DateTimeFormat("en-GB", {
+            timeZone: "Asia/Ho_Chi_Minh",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        }).format(parsed);
+    }
+
+    return raw.slice(0, 5);
+}
+
+function formatStatusLabel(value?: string): string {
+    const raw = String(value || "-").toLowerCase();
+    if (raw === "-") {
+        return "-";
+    }
+    return `${raw.charAt(0).toUpperCase()}${raw.slice(1)}`;
+}
+
+function formatStudentSessionTitle(item: StudentDashboardSessionItem): string {
+    const courseLabel = item.course_code ? `${item.course_code} - ${item.course_name ?? ""}` : item.course_name ?? "Course";
+    const sessionLabel = String(item.session_name || "").trim() || `Session #${item.session_id}`;
+    return `${courseLabel} | ${sessionLabel}`;
 }
 
 export default function DashboardPage() {
@@ -352,14 +390,14 @@ export default function DashboardPage() {
                                                     <div key={item.session_id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
                                                         <div className="flex flex-wrap items-center justify-between gap-2">
                                                             <p className="text-sm font-semibold text-slate-900">
-                                                                {item.course_code ? `${item.course_code} - ${item.course_name ?? ""}` : item.course_name ?? "Course"}
+                                                                {formatStudentSessionTitle(item)}
                                                             </p>
                                                             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(item.display_status ?? item.attendance_status ?? "absent")}`}>
-                                                                {String(item.display_status ?? item.attendance_status ?? "absent").toUpperCase()}
+                                                                {formatStatusLabel(item.display_status ?? item.attendance_status ?? "absent")}
                                                             </span>
                                                         </div>
                                                         <p className="mt-1 text-xs text-slate-500">
-                                                            {formatSessionDate(item.session_date)} | {String(item.start_time).slice(0, 5)} - {String(item.end_time).slice(0, 5)}
+                                                            {formatSessionDate(item.session_date)} | {formatSessionTime(item.start_time)} - {formatSessionTime(item.end_time)} (GMT+7)
                                                         </p>
                                                     </div>
                                                 ))
@@ -417,10 +455,10 @@ export default function DashboardPage() {
                                                     timetableList.map((item) => (
                                                         <tr key={`${item.session_id}-${item.session_date}`}>
                                                             <td className="px-3 py-2 text-slate-700">{formatSessionDate(item.session_date)}</td>
-                                                            <td className="px-3 py-2 text-slate-700">{String(item.start_time).slice(0, 5)} - {String(item.end_time).slice(0, 5)}</td>
-                                                            <td className="px-3 py-2 text-slate-700">{item.course_code ? `${item.course_code} - ${item.course_name ?? ""}` : item.course_name ?? "-"}</td>
+                                                            <td className="px-3 py-2 text-slate-700">{formatSessionTime(item.start_time)} - {formatSessionTime(item.end_time)} (GMT+7)</td>
+                                                            <td className="px-3 py-2 text-slate-700">{formatStudentSessionTitle(item)}</td>
                                                             <td className="px-3 py-2 text-slate-700">{item.teacher_name ?? "-"}</td>
-                                                            <td className="px-3 py-2 text-slate-700">{item.attendance_status ?? "-"}</td>
+                                                            <td className="px-3 py-2 text-slate-700">{formatStatusLabel(item.attendance_status)}</td>
                                                         </tr>
                                                     ))
                                                 )}

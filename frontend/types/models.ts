@@ -148,6 +148,7 @@ export type StudentAttendanceHistoryItem = {
 
 export type StudentDashboardSessionItem = {
   session_id: number;
+  session_name?: string;
   session_date: string;
   start_time: string;
   end_time: string;
