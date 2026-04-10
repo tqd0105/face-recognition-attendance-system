@@ -35,6 +35,7 @@ export default function AttendancePage() {
     const [isCameraReady, setIsCameraReady] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
     const [availableSessions, setAvailableSessions] = useState<Session[]>([]);
+    const [courseLookup, setCourseLookup] = useState<Record<number, { course_code?: string; course_name?: string }>>({});
     const [students, setStudents] = useState<Student[]>([]);
     const [events, setEvents] = useState<AttendanceItem[]>(() => attendanceService.getLocal().slice(0, 20));
     const [popupText, setPopupText] = useState<string | null>(null);
@@ -140,6 +141,18 @@ export default function AttendancePage() {
         async function loadSessions() {
             try {
                 const courses = await courseService.getAll();
+                const nextCourseLookup: Record<number, { course_code?: string; course_name?: string }> = {};
+                courses.forEach((item) => {
+                    const id = Number(item.id);
+                    if (Number.isFinite(id) && id > 0) {
+                        nextCourseLookup[id] = {
+                            course_code: item.course_code,
+                            course_name: item.course_name,
+                        };
+                    }
+                });
+                setCourseLookup(nextCourseLookup);
+
                 const courseIds = courses.map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id > 0);
                 if (courseIds.length === 0) {
                     sessionService.clearCache();
@@ -416,6 +429,54 @@ export default function AttendancePage() {
         }).format(parsed);
     }
 
+    function formatSessionDate(value?: string): string {
+        if (!value) {
+            return "-";
+        }
+
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            return value;
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return String(value).slice(0, 10);
+        }
+
+        return new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Ho_Chi_Minh",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(parsed);
+    }
+
+    function formatSessionTime(value?: string): string {
+        if (!value) {
+            return "--:--";
+        }
+        return String(value).slice(0, 5);
+    }
+
+    function titleCaseStatus(value?: string): string {
+        const raw = String(value || "scheduled").toLowerCase();
+        return `${raw.charAt(0).toUpperCase()}${raw.slice(1)}`;
+    }
+
+    function formatSessionOption(item: Session): string {
+        const courseId = Number(item.course_class_id || item.class_id || 0);
+        const course = courseLookup[courseId];
+        const classCode = course?.course_code || `Class #${courseId || item.id}`;
+        const sessionTitle = String(item.session_name || "").trim() || `Session #${item.id}`;
+        const courseLabel = `${classCode} | ${sessionTitle}`;
+
+        const dateLabel = formatSessionDate(item.session_date);
+        const timeLabel = `${formatSessionTime(item.start_time)} - ${formatSessionTime(item.end_time)}`;
+        const statusLabel = titleCaseStatus(item.status);
+
+        return `${courseLabel} | ${dateLabel} | ${timeLabel} (GMT+7) | ${statusLabel}`;
+    }
+
     function formatConfidence(value?: number): string {
         if (typeof value !== "number" || !Number.isFinite(value)) {
             return "N/A";
@@ -447,10 +508,10 @@ export default function AttendancePage() {
     function formatSessionWindow(event: AttendanceItem): string {
         const parts: string[] = [];
         if (event.session_date) {
-            parts.push(String(event.session_date));
+            parts.push(formatSessionDate(event.session_date));
         }
         if (event.session_start_time || event.session_end_time) {
-            parts.push(`${event.session_start_time ?? "--:--"} - ${event.session_end_time ?? "--:--"}`);
+            parts.push(`${formatSessionTime(event.session_start_time)} - ${formatSessionTime(event.session_end_time)} (GMT+7)`);
         }
         return parts.length > 0 ? parts.join(" | ") : "N/A";
     }
@@ -727,7 +788,7 @@ export default function AttendancePage() {
 
                                             availableSessions.map((item) => (
                                                 <option key={item.id} value={String(item.id)}>
-                                                    {item.session_name || "Session"} | {item.session_date || "No date"}
+                                                    {formatSessionOption(item)}
                                                 </option>
                                             ))
                                         )}
@@ -960,7 +1021,7 @@ export default function AttendancePage() {
                                         ) : (
                                             availableSessions.map((item) => (
                                                 <option key={item.id} value={String(item.id)}>
-                                                    {item.session_name || "Session"} | {item.session_date || "No date"}
+                                                    {formatSessionOption(item)}
                                                 </option>
                                             ))
                                         )}
