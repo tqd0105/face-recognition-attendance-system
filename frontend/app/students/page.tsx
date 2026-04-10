@@ -32,6 +32,7 @@ export default function StudentsPage() {
     const [pendingAction, setPendingAction] = useState<"deactivate" | "restore" | "hard-delete">("deactivate");
     const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
     const [sessionOptions, setSessionOptions] = useState<Session[]>([]);
+    const [courseLookup, setCourseLookup] = useState<Record<number, { course_code?: string; course_name?: string }>>({});
     const [selectedSessionId, setSelectedSessionId] = useState("");
     const [attendanceByStudent, setAttendanceByStudent] = useState<Record<number, AttendanceItem["status"]>>({});
     const [historyModalStudent, setHistoryModalStudent] = useState<Student | null>(null);
@@ -85,6 +86,18 @@ export default function StudentsPage() {
         async function loadSessionsForAttendance() {
             try {
                 const courses = await courseService.getAll();
+                const nextCourseLookup: Record<number, { course_code?: string; course_name?: string }> = {};
+                courses.forEach((item) => {
+                    const id = Number(item.id);
+                    if (Number.isFinite(id) && id > 0) {
+                        nextCourseLookup[id] = {
+                            course_code: item.course_code,
+                            course_name: item.course_name,
+                        };
+                    }
+                });
+                setCourseLookup(nextCourseLookup);
+
                 const courseIds = courses.map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id > 0);
                 if (courseIds.length === 0) {
                     setSessionOptions([]);
@@ -97,6 +110,7 @@ export default function StudentsPage() {
                 const preferred = sessionItems.find((item) => item.status === "active") ?? sessionItems[0];
                 setSelectedSessionId(preferred ? String(preferred.id) : "");
             } catch {
+                setCourseLookup({});
                 setSessionOptions([]);
                 setSelectedSessionId("");
             }
@@ -467,6 +481,68 @@ export default function StudentsPage() {
         return { total, present, late, absent };
     }, [historyRows]);
 
+    function formatSessionDate(value?: string): string {
+        if (!value) {
+            return "-";
+        }
+
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            return value;
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return String(value).slice(0, 10);
+        }
+
+        return new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Ho_Chi_Minh",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(parsed);
+    }
+
+    function formatSessionTime(value?: string): string {
+        if (!value) {
+            return "--:--";
+        }
+
+        const raw = String(value).trim();
+        const match = raw.match(/^(\d{2}:\d{2})/);
+        if (match) {
+            return match[1];
+        }
+
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) {
+            return new Intl.DateTimeFormat("en-GB", {
+                timeZone: "Asia/Ho_Chi_Minh",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+            }).format(parsed);
+        }
+
+        return raw.slice(0, 5);
+    }
+
+    function formatStatusLabel(value?: string): string {
+        const raw = String(value || "scheduled").toLowerCase();
+        return `${raw.charAt(0).toUpperCase()}${raw.slice(1)}`;
+    }
+
+    function formatSessionOption(item: Session): string {
+        const courseId = Number(item.course_class_id || item.class_id || 0);
+        const course = courseLookup[courseId];
+        const classCode = course?.course_code || `Class #${courseId || item.id}`;
+        const sessionTitle = String(item.session_name || "").trim() || `Session #${item.id}`;
+        const dateLabel = formatSessionDate(item.session_date);
+        const timeLabel = `${formatSessionTime(item.start_time)} - ${formatSessionTime(item.end_time)} (GMT+7)`;
+        const statusLabel = formatStatusLabel(item.status);
+        return `${classCode} | ${sessionTitle} | ${dateLabel} | ${timeLabel} | ${statusLabel}`;
+    }
+
     return (
         <main className="motion-page space-y-4 px-1 py-1 sm:px-2">
             <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -511,7 +587,7 @@ export default function StudentsPage() {
                                 <option value="">Attendance: no session selected</option>
                                 {sessionOptions.map((item) => (
                                     <option key={item.id} value={String(item.id)}>
-                                        Session #{item.id} - {item.session_date || "No date"}
+                                        {formatSessionOption(item)}
                                     </option>
                                 ))}
                             </select>
