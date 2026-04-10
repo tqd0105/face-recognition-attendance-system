@@ -203,6 +203,14 @@ async function bootstrapStudentCredentials() {
   }
 }
 
+async function bootstrapSessionSchema() {
+  try {
+    await db.query('ALTER TABLE Session ADD COLUMN IF NOT EXISTS session_name VARCHAR(150)');
+  } catch (error) {
+    console.error('Session schema bootstrap error:', error.message);
+  }
+}
+
 async function runSessionLifecycleJob() {
   if (isSessionLifecycleJobRunning) {
     return;
@@ -301,5 +309,6 @@ app.listen(PORT, () => {
 });
 
 void bootstrapStudentCredentials();
+void bootstrapSessionSchema();
 void runSessionLifecycleJob();
 setInterval(runSessionLifecycleJob, Number(process.env.SESSION_LIFECYCLE_INTERVAL_MS || 60000));

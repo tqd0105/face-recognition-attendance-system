@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS Enrollments (
 CREATE TABLE IF NOT EXISTS Session (
     id SERIAL PRIMARY KEY,
     course_class_id INTEGER REFERENCES Course_classes(id) ON DELETE CASCADE,
+    session_name VARCHAR(150),
     session_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
