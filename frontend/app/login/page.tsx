@@ -82,11 +82,11 @@ export default function LoginPage() {
 
                     <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-800">Choose account mode</p>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2 ">
+                        <div className="mt-3 grid gap-3 sm:grid-cols-3 ">
                             <button
                                 type="button"
                                 className={`interactive-btn text-center rounded-xl border px-2 py-3 text-center text-sm font-semibold transition ${role === "teacher"
-                                    ? "border-blue-300 bg-blue-100 text-blue-900 shadow"
+                                    ? "border-blue-300 bg-yellow-400 text-blue-900 shadow"
                                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                 onClick={() => setRole("teacher")}
@@ -96,23 +96,23 @@ export default function LoginPage() {
                             <button
                                 type="button"
                                 className={`interactive-btn rounded-xl text-center border px-2 py-3 text-center text-sm font-semibold transition ${role === "student"
-                                    ? "border-indigo-300 bg-indigo-100 text-indigo-900 shadow"
+                                    ? "border-indigo-300 bg-yellow-400 text-indigo-900 shadow"
                                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                 onClick={() => setRole("student")}
                             >
                                 Student mode
                             </button>
-                            {/* <button
+                            <button
                                 type="button"
-                                className={`interactive-btn rounded-xl text-center border px-2 py-3 text-left text-sm font-semibold transition ${role === "admin"
-                                    ? "border-emerald-300 bg-emerald-100 text-emerald-900 shadow"
+                                className={`interactive-btn rounded-xl text-center border px-2 py-3 text-center text-sm font-semibold transition ${role === "admin"
+                                    ? "border-indigo-300 bg-yellow-400 text-indigo-900 shadow"
                                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                 onClick={() => setRole("admin")}
                             >
                                 Admin mode
-                            </button> */}
+                            </button>
                         </div>
                     </div>
 

@@ -95,10 +95,15 @@ exports.loginTeacher = async (req, res) => {
         }
 
         const adminEmails = parseAdminEmails();
+        const normalizedTeacherEmail = String(teacher.email || '').toLowerCase();
         const hasAdminPrivilege =
             String(teacher.role || '').toLowerCase() === 'admin' ||
             String(teacher.status || '').toLowerCase() === 'admin' ||
-            adminEmails.includes(String(teacher.email || '').toLowerCase());
+            adminEmails.includes(normalizedTeacherEmail);
+
+        if (requestedRole === 'teacher' && adminEmails.includes(normalizedTeacherEmail)) {
+            return res.status(403).json({ message: 'Access denied: this account is admin-only. Please sign in with admin role.' });
+        }
 
         if (requestedRole === 'admin' && !hasAdminPrivilege) {
             return res.status(403).json({ message: 'Access denied: this account is not admin' });
