@@ -84,4 +84,3 @@ CREATE TABLE IF NOT EXISTS Attendance (
     status attendance_status DEFAULT 'present',
     confidence_score FLOAT,
     UNIQUE(session_id, student_id) 
-);
