@@ -20,6 +20,22 @@ type ServiceHealth = {
     ai_url?: string;
 };
 
+const INVALID_TIME_RANGE_MESSAGE = "End Time must be greater than Start Time.";
+const DUPLICATE_SESSION_MESSAGE = "This session already exists (same class, date, and time).";
+const BACKEND_INVALID_TIME_RANGE_MESSAGE = "Start time must be earlier than end time!";
+
+function isTimeRangeInvalid(start: string, end: string): boolean {
+    return Boolean(start && end && start >= end);
+}
+
+function isInvalidTimeRangeError(message: string | null): boolean {
+    return message === INVALID_TIME_RANGE_MESSAGE || message === BACKEND_INVALID_TIME_RANGE_MESSAGE;
+}
+
+function isDuplicateSessionError(message: string | null): boolean {
+    return message === DUPLICATE_SESSION_MESSAGE;
+}
+
 export default function SessionsPage() {
     const router = useRouter();
     const canUpdateSession = true;
@@ -123,6 +139,23 @@ export default function SessionsPage() {
         return map;
     }, [courseOptions]);
 
+    const normalizedCourseClassId = Number(selectedCourseClassId);
+    const isTimeRangeCurrentlyInvalid = isTimeRangeInvalid(startTime, endTime);
+    const hasDuplicateSession = useMemo(
+        () =>
+            Number.isFinite(normalizedCourseClassId) &&
+            normalizedCourseClassId > 0 &&
+            sessions.some(
+                (item) =>
+                    item.id !== editingSessionId &&
+                    Number(item.course_class_id ?? item.class_id) === normalizedCourseClassId &&
+                    normalizeSessionDate(item.session_date) === sessionDate &&
+                    normalizeSessionTime(item.start_time) === startTime &&
+                    normalizeSessionTime(item.end_time) === endTime,
+            ),
+        [editingSessionId, endTime, normalizedCourseClassId, sessionDate, sessions, startTime],
+    );
+
     function normalizeSessionDate(value?: string): string {
         if (!value) {
             return "";
@@ -156,6 +189,21 @@ export default function SessionsPage() {
         }).format(parsed);
     }
 
+    useEffect(() => {
+        if (!modalError) {
+            return;
+        }
+
+        if (isInvalidTimeRangeError(modalError) && !isTimeRangeCurrentlyInvalid) {
+            setModalError(null);
+            return;
+        }
+
+        if (isDuplicateSessionError(modalError) && !hasDuplicateSession) {
+            setModalError(null);
+        }
+    }, [hasDuplicateSession, isTimeRangeCurrentlyInvalid, modalError]);
+
     async function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         if (!selectedCourseClassId.trim() || !sessionDate || !startTime || !endTime) {
@@ -164,22 +212,18 @@ export default function SessionsPage() {
 
         setModalError(null);
 
-        const normalizedCourseClassId = Number(selectedCourseClassId);
         if (!Number.isFinite(normalizedCourseClassId) || normalizedCourseClassId <= 0) {
             setModalError("Invalid class selection. Please select a valid class.");
             return;
         }
 
-        const duplicatedSession = sessions.some(
-            (item) =>
-                item.id !== editingSessionId &&
-                Number(item.course_class_id ?? item.class_id) === normalizedCourseClassId &&
-                normalizeSessionDate(item.session_date) === sessionDate &&
-                normalizeSessionTime(item.start_time) === startTime &&
-                normalizeSessionTime(item.end_time) === endTime,
-        );
-        if (duplicatedSession) {
-            setModalError("This session already exists (same class, date, and time).");
+        if (isTimeRangeCurrentlyInvalid) {
+            setModalError(INVALID_TIME_RANGE_MESSAGE);
+            return;
+        }
+
+        if (hasDuplicateSession) {
+            setModalError(DUPLICATE_SESSION_MESSAGE);
             return;
         }
 
@@ -620,7 +664,13 @@ export default function SessionsPage() {
                             type="time"
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             value={startTime}
-                            onChange={(e) => setStartTime(e.target.value)}
+                            onChange={(e) => {
+                                const newStart = e.target.value;
+                                setStartTime(newStart);
+                                if (modalError && isInvalidTimeRangeError(modalError) && !isTimeRangeInvalid(newStart, endTime)) {
+                                    setModalError(null);
+                                }
+                            }}
                             required
                         />
                     </div>
@@ -633,7 +683,13 @@ export default function SessionsPage() {
                             type="time"
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             value={endTime}
-                            onChange={(e) => setEndTime(e.target.value)}
+                            onChange={(e) => {
+                                const newEnd = e.target.value;
+                                setEndTime(newEnd);
+                                if (modalError && isInvalidTimeRangeError(modalError) && !isTimeRangeInvalid(startTime, newEnd)) {
+                                    setModalError(null);
+                                }
+                            }}
                             required
                         />
                     </div>
@@ -661,13 +717,13 @@ export default function SessionsPage() {
                         disabled={
                             isCreating ||
                             !hasCourseOptions ||
-                            (startTime && endTime ? startTime >= endTime : false)
+                            isTimeRangeCurrentlyInvalid
                         }
                     >
                         {isCreating ? "Saving..." : editingSessionId ? "Update Session" : "Create Session"}
                     </button>
-                    {startTime && endTime && startTime >= endTime && (
-                        <p className="text-sm font-semibold text-rose-700">End Time must be greater than Start Time.</p>
+                    {isTimeRangeCurrentlyInvalid && (
+                        <p className="text-sm font-semibold text-rose-700">{INVALID_TIME_RANGE_MESSAGE}</p>
                     )}
                 </form>
             </Modal>

@@ -65,7 +65,7 @@ const cards: DashboardCard[] = [
         description: "Manage administrative class structures, majors, and department mappings.",
         href: "/classes",
         cta: "Manage Home Classes",
-        badge: "Academic",
+        badge: "Class",
         iconType: "image",
         icon: HomeClassIcons,
     },
