@@ -365,6 +365,7 @@ exports.checkInOneFace = async (req, res) => {
              WHERE id = $1`,
             [student_id]
         );
+        
         if (studentCheck.rows.length === 0) {
             return res.status(404).json({ message: 'Student not found!' });
         }
