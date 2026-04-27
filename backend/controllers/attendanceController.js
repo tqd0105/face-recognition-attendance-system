@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const axios = require('axios');
+const { verifyLivenessPayload } = require('../utils/liveness');
 
 function isPrivilegedRole(role) {
     const normalized = String(role || '').toLowerCase();
@@ -34,6 +35,25 @@ function resolveAiConfig() {
 function toNumeric(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function rejectInvalidLiveness(req, res) {
+    const liveness = verifyLivenessPayload(req.body);
+    if (liveness.ok) {
+        return liveness;
+    }
+
+    res.status(422).json({
+        message: liveness.message || 'Liveness verification failed.',
+        error_code: liveness.error_code || 'LIVENESS_FAILED',
+        liveness: {
+            score: liveness.score,
+            best_score: liveness.best_score,
+            moving_pairs: liveness.moving_pairs,
+            required_moving_pairs: liveness.required_moving_pairs,
+        },
+    });
+    return null;
 }
 
 // @desc    Nhận kết quả điểm danh (thường do hệ thống AI gọi)
@@ -140,6 +160,11 @@ exports.recognizeRealtime = async (req, res) => {
         }
         if (sessionCheck.rows[0].status !== 'active') {
             return res.status(400).json({ message: 'Session is not active. Please start the session before realtime scanning.' });
+        }
+
+        const liveness = rejectInvalidLiveness(req, res);
+        if (!liveness) {
+            return;
         }
 
         const threshold = toNumeric(min_similarity, toNumeric(process.env.ATTENDANCE_MIN_CONFIDENCE, 0.82));
@@ -326,6 +351,13 @@ exports.recognizeRealtime = async (req, res) => {
             data: {
                 session_id: Number(session_id),
                 threshold,
+                liveness: {
+                    score: liveness.score,
+                    best_score: liveness.best_score,
+                    moving_pairs: liveness.moving_pairs,
+                    required_moving_pairs: liveness.required_moving_pairs,
+                    skipped: Boolean(liveness.skipped),
+                },
                 detections,
                 checked_in: checkedIn,
             },
@@ -371,6 +403,11 @@ exports.checkInOneFace = async (req, res) => {
         }
         if (!studentCheck.rows[0].has_face_data) {
             return res.status(422).json({ message: 'Student has no enrolled face data.' });
+        }
+
+        const liveness = rejectInvalidLiveness(req, res);
+        if (!liveness) {
+            return;
         }
 
         const threshold = toNumeric(min_similarity, toNumeric(process.env.ATTENDANCE_MIN_CONFIDENCE, 0.82));
@@ -461,6 +498,13 @@ exports.checkInOneFace = async (req, res) => {
                 ? 'One-face check-in successful.'
                 : 'Student already checked in. The original check-in time is preserved.',
             data: attendance.rows[0],
+            liveness: {
+                score: liveness.score,
+                best_score: liveness.best_score,
+                moving_pairs: liveness.moving_pairs,
+                required_moving_pairs: liveness.required_moving_pairs,
+                skipped: Boolean(liveness.skipped),
+            },
         });
     } catch (error) {
         console.error(error.message);

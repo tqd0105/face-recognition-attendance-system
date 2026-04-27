@@ -52,3 +52,27 @@ API base URL: `http://localhost:5000`
 ```bash
 curl http://localhost:5000/api/health/services
 ```
+
+## Attendance Liveness
+
+Realtime recognition endpoints require multi-frame liveness proof by default:
+
+- `POST /api/attendance/recognize`
+- `POST /api/attendance/check-in-one-face`
+
+Clients should send the normal `image_base64` used for recognition plus `liveness_frames`, an array of recent camera frame base64 strings captured while the user moves slightly.
+
+```json
+{
+  "session_id": 1,
+  "image_base64": "data:image/jpeg;base64,...",
+  "liveness_frames": [
+    "data:image/jpeg;base64,...",
+    "data:image/jpeg;base64,...",
+    "data:image/jpeg;base64,...",
+    "data:image/jpeg;base64,..."
+  ]
+}
+```
+
+Set `ATTENDANCE_REQUIRE_LIVENESS=false` only for local debugging or automated tests.
