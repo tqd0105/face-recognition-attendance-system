@@ -184,6 +184,7 @@ export const attendanceService = {
     session_id: number;
     student_id: number;
     image_base64: string;
+    liveness_frames?: string[];
     min_similarity?: number;
   }): Promise<CheckInOneFaceResult> {
     try {
@@ -266,6 +267,7 @@ export const attendanceService = {
   async recognizeRealtime(payload: {
     session_id: number;
     image_base64: string;
+    liveness_frames?: string[];
     min_similarity?: number;
   }): Promise<RealtimeRecognizeResponse> {
     try {

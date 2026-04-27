@@ -13,6 +13,22 @@ import { studentService } from "@/services/student.service";
 import { sessionService } from "@/services/session.service";
 import type { AttendanceItem, RealtimeDetection, Session, Student } from "@/types/models";
 
+const FRAME_TOO_DARK_MESSAGE = "Frame too dark/blocked. Please do not cover the camera and improve lighting.";
+const LIVENESS_CHECKING_MESSAGE = "Checking liveness. Please move your head slightly.";
+const LIVENESS_FAILED_MESSAGE = "Liveness check failed. Please use a real face and move slightly, not a photo.";
+const LIVENESS_SAMPLE_COUNT = 4;
+const LIVENESS_SAMPLE_DELAY_MS = 120;
+const LIVENESS_SIGNATURE_POINTS = 320;
+const LIVENESS_MIN_DELTA = 3.2;
+const LIVENESS_REQUIRED_MOVING_FRAMES = 2;
+
+type LivenessResult = {
+    ok: boolean;
+    imageBase64?: string;
+    livenessFrames?: string[];
+    message?: string;
+};
+
 export default function AttendancePage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -272,7 +288,7 @@ export default function AttendancePage() {
 
         canvas.width = width;
         canvas.height = height;
-        const context = canvas.getContext("2d");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) {
             return null;
         }
@@ -321,6 +337,99 @@ export default function AttendancePage() {
         const variance = sumSq / count - mean * mean;
 
         return mean < 18 || variance < 12;
+    }
+
+    function readFrameSignature(): number[] | null {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return null;
+        }
+
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) {
+            return null;
+        }
+
+        const { width, height } = canvas;
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+
+        const imageData = context.getImageData(0, 0, width, height).data;
+        const signature: number[] = [];
+        const step = Math.max(Math.floor((width * height) / LIVENESS_SIGNATURE_POINTS), 1);
+
+        for (let pixel = 0; pixel < width * height; pixel += step) {
+            const index = pixel * 4;
+            const r = imageData[index] ?? 0;
+            const g = imageData[index + 1] ?? 0;
+            const b = imageData[index + 2] ?? 0;
+            signature.push(0.299 * r + 0.587 * g + 0.114 * b);
+        }
+
+        return signature.length > 0 ? signature : null;
+    }
+
+    function getSignatureDelta(previous: number[], next: number[]): number {
+        const count = Math.min(previous.length, next.length);
+        if (count === 0) {
+            return 0;
+        }
+
+        let total = 0;
+        for (let index = 0; index < count; index += 1) {
+            total += Math.abs((previous[index] ?? 0) - (next[index] ?? 0));
+        }
+
+        return total / count;
+    }
+
+    function wait(ms: number): Promise<void> {
+        return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    async function captureLiveFrameSet(): Promise<LivenessResult> {
+        setScanStatusText(LIVENESS_CHECKING_MESSAGE);
+
+        let previousSignature: number[] | null = null;
+        let movingFrameCount = 0;
+        const livenessFrames: string[] = [];
+
+        for (let sampleIndex = 0; sampleIndex < LIVENESS_SAMPLE_COUNT; sampleIndex += 1) {
+            const imageBase64 = captureCurrentFrame();
+            if (!imageBase64) {
+                return { ok: false, message: "Cannot capture camera frame." };
+            }
+            if (isFrameLikelyInvalid()) {
+                return { ok: false, message: FRAME_TOO_DARK_MESSAGE };
+            }
+
+            const signature = readFrameSignature();
+            if (!signature) {
+                return { ok: false, message: "Cannot inspect camera frame." };
+            }
+
+            livenessFrames.push(imageBase64);
+
+            if (previousSignature && getSignatureDelta(previousSignature, signature) >= LIVENESS_MIN_DELTA) {
+                movingFrameCount += 1;
+            }
+            previousSignature = signature;
+
+            if (sampleIndex < LIVENESS_SAMPLE_COUNT - 1) {
+                await wait(LIVENESS_SAMPLE_DELAY_MS);
+            }
+        }
+
+        if (movingFrameCount < LIVENESS_REQUIRED_MOVING_FRAMES) {
+            return { ok: false, message: LIVENESS_FAILED_MESSAGE };
+        }
+
+        return {
+            ok: true,
+            imageBase64: livenessFrames[livenessFrames.length - 1],
+            livenessFrames,
+        };
     }
 
     function renderDetectionLabel(item: RealtimeDetection): string {
@@ -527,24 +636,27 @@ export default function AttendancePage() {
             return;
         }
 
-        const imageBase64 = captureCurrentFrame();
-        if (!imageBase64) {
-            setScanStatusText("Cannot capture camera frame");
-            return;
-        }
-
-        if (isFrameLikelyInvalid()) {
-            setDetections([]);
-            setScanStatusText("Frame too dark/blocked. Please do not cover the screen and improve lighting.");
-            return;
-        }
-
         try {
             setIsRecognizing(true);
             isRecognizingRef.current = true;
+            const liveness = await captureLiveFrameSet();
+            if (!liveness.ok || !liveness.imageBase64 || !liveness.livenessFrames) {
+                const message = liveness.message ?? LIVENESS_FAILED_MESSAGE;
+                setDetections([]);
+                setPopupText(message);
+                setScanStatusText(message);
+                window.setTimeout(() => setPopupText(null), 1800);
+                return;
+            }
+
+            if (!isScanningRef.current || sessionIdRef.current.trim() !== activeSessionId) {
+                return;
+            }
+
             const result = await attendanceService.recognizeRealtime({
                 session_id: Number(activeSessionId),
-                image_base64: imageBase64,
+                image_base64: liveness.imageBase64,
+                liveness_frames: liveness.livenessFrames,
                 min_similarity: realtimeThreshold,
             });
 
@@ -638,24 +750,26 @@ export default function AttendancePage() {
         }
 
         try {
-            const imageBase64 = captureCurrentFrame();
-            if (!imageBase64) {
-                setPopupText("Cannot capture camera frame.");
-                return;
-            }
-
-            if (isFrameLikelyInvalid()) {
-                setPopupText("Frame too dark/blocked. Please do not cover camera and improve lighting.");
+            setIsRecognizing(true);
+            isRecognizingRef.current = true;
+            const liveness = await captureLiveFrameSet();
+            if (!liveness.ok || !liveness.imageBase64 || !liveness.livenessFrames) {
+                const message = liveness.message ?? LIVENESS_FAILED_MESSAGE;
+                setPopupText(message);
+                setScanStatusText(message);
+                window.setTimeout(() => setPopupText(null), 1800);
                 return;
             }
 
             const result = await attendanceService.checkInOneFace({
                 session_id: Number(sessionId),
                 student_id: Number(resolvedStudentId),
-                image_base64: imageBase64,
+                image_base64: liveness.imageBase64,
+                liveness_frames: liveness.livenessFrames,
                 min_similarity: oneFaceThreshold,
             });
             setPopupText(result.message ?? "One-face check-in success");
+            setScanStatusText("Liveness passed. One-face check-in completed.");
             setLastSeenByStudent((prev) => ({
                 ...prev,
                 [getSeenKey(sessionId, Number(resolvedStudentId))]: new Date().toISOString(),
@@ -664,6 +778,10 @@ export default function AttendancePage() {
         } catch (err) {
             const message = err instanceof Error ? err.message : "Check-in failed";
             setPopupText(message);
+            setScanStatusText(message);
+        } finally {
+            setIsRecognizing(false);
+            isRecognizingRef.current = false;
         }
 
         window.setTimeout(() => setPopupText(null), 1800);
@@ -679,7 +797,7 @@ export default function AttendancePage() {
         setDetections([]);
         setLastEventId(null);
         noFaceFrameCountRef.current = 0;
-        setScanStatusText("Scanning...");
+        setScanStatusText("Scanning. Please move your head slightly for liveness check.");
         timerRef.current = window.setInterval(() => {
             void scanRealtimeFrame();
         }, scanIntervalMs);
@@ -874,7 +992,7 @@ export default function AttendancePage() {
                                 className="interactive-btn inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg border border-blue-300 bg-blue-50 px-3 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                                 data-role={canManageAttendance ? "teacher" : user.role}
                                 onClick={createCheckIn}
-                                disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn}
+                                disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn || isRecognizing}
                                 type="button"
                             >
                                 Single-Face Check-in
@@ -963,7 +1081,7 @@ export default function AttendancePage() {
                             type="button"
                             className="inline-flex h-10 items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                             onClick={createCheckIn}
-                            disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn}
+                            disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn || isRecognizing}
                         >
                             One-Face
                         </button>
@@ -1050,7 +1168,7 @@ export default function AttendancePage() {
                                 <button
                                     className="interactive-btn inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md"
                                     onClick={createCheckIn}
-                                    disabled={!canManageAttendance}
+                                    disabled={!canManageAttendance || isRecognizing}
                                     type="button"
                                 >
                                     Check-in 1 Face
