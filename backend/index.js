@@ -262,13 +262,8 @@ async function runSessionLifecycleJob() {
       }
     }
 
-    const endedActive = await db.query(
-      `UPDATE Session
-       SET status = 'completed'
-       WHERE status = 'active'
-         AND (session_date + end_time) <= NOW()
-       RETURNING id`
-    );
+    // Active sessions stay open after end_time so late attendance can still be recorded until the teacher presses Stop.
+    const endedActive = { rows: [] };
 
     const overdueScheduled = await db.query(
       `UPDATE Session
