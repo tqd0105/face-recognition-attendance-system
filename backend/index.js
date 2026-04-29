@@ -18,8 +18,8 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '8mb' })); // Cho phép nhận frame base64 từ realtime recognition
-app.use(express.urlencoded({ limit: '8mb', extended: true }));
+app.use(express.json({ limit: '20mb' })); // Allows multi-frame liveness payloads from realtime recognition.
+app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
 // Connect with Route
 app.use('/api/auth', authRoutes);
@@ -262,13 +262,8 @@ async function runSessionLifecycleJob() {
       }
     }
 
-    const endedActive = await db.query(
-      `UPDATE Session
-       SET status = 'completed'
-       WHERE status = 'active'
-         AND (session_date + end_time) <= NOW()
-       RETURNING id`
-    );
+    // Active sessions stay open after end_time so late attendance can still be recorded until the teacher presses Stop.
+    const endedActive = { rows: [] };
 
     const overdueScheduled = await db.query(
       `UPDATE Session

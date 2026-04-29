@@ -7,8 +7,11 @@ Internal AI service for face encoding and recognition.
 - `POST /ai/encode`
 - `POST /ai/load-embeddings`
 - `POST /ai/recognize`
+- `POST /ai/liveness`
 - `POST /ai/unload-embeddings`
 - `GET /health`
+
+`POST /ai/liveness` checks multiple camera frames from one liveness attempt. It compares face landmarks across frames, so the user should turn their head slightly left or right; moving a static phone image should not be enough.
 
 ## Run
 
@@ -39,3 +42,4 @@ Detailed guide: `docs/11_ai-service-smoke-test.md`
 - This service must be called by backend only.
 - Frontend must never call this service directly.
 - Business logic (attendance rules, duplicate prevention) belongs to backend.
+

@@ -1,6 +1,6 @@
-# face-recognition-attendance-system
+﻿# face-recognition-attendance-system
 
-Face Recognition Attendance System (Frontend + AI service integration docs).
+Face Recognition Attendance System (Frontend + Backend + AI service).
 
 This guide helps a teammate run the project locally with PostgreSQL.
 
@@ -17,8 +17,7 @@ Typical local layout used by this project:
 
 ```text
 /home/<user>/Applications/
-	face-recognition-attendance-system/   # this repo (frontend + ai-service + docs)
-	face-recognition-backend/backend/     # backend API repo
+	face-recognition-attendance-system/   # this repo (frontend + backend + ai-service + docs)
 ```
 
 If your layout is different, adjust paths in commands below.
@@ -42,9 +41,10 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:5000
 
 ### Backend
 
-In backend repo:
+In this repo:
 
 ```bash
+cd backend
 cp .env.example .env
 ```
 
@@ -66,14 +66,17 @@ In `ai-service`, create `.env` if needed and ensure token matches backend:
 
 ## 5. Import Local Database (Important)
 
-Use the SQL schema file from backend repo:
+Use the SQL schema file in this repo:
 
-`/home/<user>/Applications/face-recognition-backend/backend/database.sql`
+`/home/<user>/Applications/face-recognition-attendance-system/backend/database.sql`
 
 Import command example:
 
 ```bash
 psql -U <db_user> -d <db_name> -f /home/<user>/Applications/face-recognition-backend/backend/database.sql
+
+# or in this repo layout
+psql -U <db_user> -d <db_name> -f /home/<user>/Applications/face-recognition-attendance-system/backend/database.sql
 ```
 
 This file includes:
@@ -89,7 +92,7 @@ Open 3 terminals.
 ### Terminal A: Backend API
 
 ```bash
-cd /home/<user>/Applications/face-recognition-backend/backend
+cd /home/<user>/Applications/face-recognition-attendance-system/backend
 npm install
 npm start
 ```

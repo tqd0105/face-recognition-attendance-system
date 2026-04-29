@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Clock3, Eye, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, Clock3, Eye, ShieldCheck, X } from "lucide-react";
 import { WebcamLiveIcons } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
 import { attendanceService } from "@/services/attendance.service";
@@ -12,6 +12,27 @@ import { courseService } from "@/services/course.service";
 import { studentService } from "@/services/student.service";
 import { sessionService } from "@/services/session.service";
 import type { AttendanceItem, RealtimeDetection, Session, Student } from "@/types/models";
+
+const FRAME_TOO_DARK_MESSAGE = "Frame too dark/blocked. Please do not cover the camera and improve lighting.";
+const LIVENESS_CHECKING_MESSAGE = "Checking liveness. Please turn your head slightly left or right.";
+const LIVENESS_FAILED_MESSAGE = "Liveness check failed. Please use a real face and turn your head slightly, not a photo.";
+const LIVENESS_SAMPLE_COUNT = 6;
+const LIVENESS_SAMPLE_DELAY_MS = 180;
+const LIVENESS_SIGNATURE_POINTS = 320;
+const LIVENESS_MIN_DELTA = 3.2;
+const LIVENESS_REQUIRED_MOVING_FRAMES = 2;
+
+type LivenessResult = {
+    ok: boolean;
+    imageBase64?: string;
+    livenessFrames?: string[];
+    message?: string;
+};
+
+type LivenessAlert = {
+    message: string;
+    createdAt: number;
+};
 
 export default function AttendancePage() {
     const router = useRouter();
@@ -39,6 +60,7 @@ export default function AttendancePage() {
     const [students, setStudents] = useState<Student[]>([]);
     const [events, setEvents] = useState<AttendanceItem[]>(() => attendanceService.getLocal().slice(0, 20));
     const [popupText, setPopupText] = useState<string | null>(null);
+    const [livenessAlert, setLivenessAlert] = useState<LivenessAlert | null>(null);
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [lastEventId, setLastEventId] = useState<string | null>(null);
     const [detections, setDetections] = useState<RealtimeDetection[]>([]);
@@ -85,6 +107,27 @@ export default function AttendancePage() {
         }
         const code = matched.student_code ?? `Student #${matched.id}`;
         return `Student: ${matched.name}`;
+    }
+
+    function isLivenessMessage(message: string): boolean {
+        const normalized = message.toLowerCase();
+        return normalized.includes("liveness")
+            || normalized.includes("real face")
+            || normalized.includes("photo")
+            || normalized.includes("static")
+            || normalized.includes("turn your head");
+    }
+
+    function showLivenessAlert(message: string) {
+        setPopupText(null);
+        setLivenessAlert({
+            message,
+            createdAt: Date.now(),
+        });
+    }
+
+    function clearLivenessAlert() {
+        setLivenessAlert(null);
     }
 
     useEffect(() => {
@@ -272,7 +315,7 @@ export default function AttendancePage() {
 
         canvas.width = width;
         canvas.height = height;
-        const context = canvas.getContext("2d");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) {
             return null;
         }
@@ -321,6 +364,99 @@ export default function AttendancePage() {
         const variance = sumSq / count - mean * mean;
 
         return mean < 18 || variance < 12;
+    }
+
+    function readFrameSignature(): number[] | null {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return null;
+        }
+
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) {
+            return null;
+        }
+
+        const { width, height } = canvas;
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+
+        const imageData = context.getImageData(0, 0, width, height).data;
+        const signature: number[] = [];
+        const step = Math.max(Math.floor((width * height) / LIVENESS_SIGNATURE_POINTS), 1);
+
+        for (let pixel = 0; pixel < width * height; pixel += step) {
+            const index = pixel * 4;
+            const r = imageData[index] ?? 0;
+            const g = imageData[index + 1] ?? 0;
+            const b = imageData[index + 2] ?? 0;
+            signature.push(0.299 * r + 0.587 * g + 0.114 * b);
+        }
+
+        return signature.length > 0 ? signature : null;
+    }
+
+    function getSignatureDelta(previous: number[], next: number[]): number {
+        const count = Math.min(previous.length, next.length);
+        if (count === 0) {
+            return 0;
+        }
+
+        let total = 0;
+        for (let index = 0; index < count; index += 1) {
+            total += Math.abs((previous[index] ?? 0) - (next[index] ?? 0));
+        }
+
+        return total / count;
+    }
+
+    function wait(ms: number): Promise<void> {
+        return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    async function captureLiveFrameSet(): Promise<LivenessResult> {
+        setScanStatusText(LIVENESS_CHECKING_MESSAGE);
+
+        let previousSignature: number[] | null = null;
+        let movingFrameCount = 0;
+        const livenessFrames: string[] = [];
+
+        for (let sampleIndex = 0; sampleIndex < LIVENESS_SAMPLE_COUNT; sampleIndex += 1) {
+            const imageBase64 = captureCurrentFrame();
+            if (!imageBase64) {
+                return { ok: false, message: "Cannot capture camera frame." };
+            }
+            if (isFrameLikelyInvalid()) {
+                return { ok: false, message: FRAME_TOO_DARK_MESSAGE };
+            }
+
+            const signature = readFrameSignature();
+            if (!signature) {
+                return { ok: false, message: "Cannot inspect camera frame." };
+            }
+
+            livenessFrames.push(imageBase64);
+
+            if (previousSignature && getSignatureDelta(previousSignature, signature) >= LIVENESS_MIN_DELTA) {
+                movingFrameCount += 1;
+            }
+            previousSignature = signature;
+
+            if (sampleIndex < LIVENESS_SAMPLE_COUNT - 1) {
+                await wait(LIVENESS_SAMPLE_DELAY_MS);
+            }
+        }
+
+        if (movingFrameCount < LIVENESS_REQUIRED_MOVING_FRAMES) {
+            return { ok: false, message: LIVENESS_FAILED_MESSAGE };
+        }
+
+        return {
+            ok: true,
+            imageBase64: livenessFrames[livenessFrames.length - 1],
+            livenessFrames,
+        };
     }
 
     function renderDetectionLabel(item: RealtimeDetection): string {
@@ -527,24 +663,31 @@ export default function AttendancePage() {
             return;
         }
 
-        const imageBase64 = captureCurrentFrame();
-        if (!imageBase64) {
-            setScanStatusText("Cannot capture camera frame");
-            return;
-        }
-
-        if (isFrameLikelyInvalid()) {
-            setDetections([]);
-            setScanStatusText("Frame too dark/blocked. Please do not cover the screen and improve lighting.");
-            return;
-        }
-
         try {
             setIsRecognizing(true);
             isRecognizingRef.current = true;
+            const liveness = await captureLiveFrameSet();
+            if (!isScanningRef.current || sessionIdRef.current.trim() !== activeSessionId) {
+                return;
+            }
+
+            if (!liveness.ok || !liveness.imageBase64 || !liveness.livenessFrames) {
+                const message = liveness.message ?? LIVENESS_FAILED_MESSAGE;
+                setDetections([]);
+                showLivenessAlert(message);
+                setScanStatusText(message);
+                return;
+            }
+            clearLivenessAlert();
+
+            if (!isScanningRef.current || sessionIdRef.current.trim() !== activeSessionId) {
+                return;
+            }
+
             const result = await attendanceService.recognizeRealtime({
                 session_id: Number(activeSessionId),
-                image_base64: imageBase64,
+                image_base64: liveness.imageBase64,
+                liveness_frames: liveness.livenessFrames,
                 min_similarity: realtimeThreshold,
             });
 
@@ -595,10 +738,19 @@ export default function AttendancePage() {
                 await refreshEvents(activeSessionId);
             }
         } catch (err) {
+            if (!isScanningRef.current || sessionIdRef.current.trim() !== activeSessionId) {
+                return;
+            }
+
             const message = err instanceof Error ? err.message : "Realtime recognize failed";
-            setPopupText(message);
             setScanStatusText(message);
-            window.setTimeout(() => setPopupText(null), 1600);
+            if (isLivenessMessage(message)) {
+                setDetections([]);
+                showLivenessAlert(message);
+            } else {
+                setPopupText(message);
+                window.setTimeout(() => setPopupText(null), 1600);
+            }
         } finally {
             setIsRecognizing(false);
             isRecognizingRef.current = false;
@@ -638,24 +790,26 @@ export default function AttendancePage() {
         }
 
         try {
-            const imageBase64 = captureCurrentFrame();
-            if (!imageBase64) {
-                setPopupText("Cannot capture camera frame.");
+            setIsRecognizing(true);
+            isRecognizingRef.current = true;
+            const liveness = await captureLiveFrameSet();
+            if (!liveness.ok || !liveness.imageBase64 || !liveness.livenessFrames) {
+                const message = liveness.message ?? LIVENESS_FAILED_MESSAGE;
+                showLivenessAlert(message);
+                setScanStatusText(message);
                 return;
             }
-
-            if (isFrameLikelyInvalid()) {
-                setPopupText("Frame too dark/blocked. Please do not cover camera and improve lighting.");
-                return;
-            }
+            clearLivenessAlert();
 
             const result = await attendanceService.checkInOneFace({
                 session_id: Number(sessionId),
                 student_id: Number(resolvedStudentId),
-                image_base64: imageBase64,
+                image_base64: liveness.imageBase64,
+                liveness_frames: liveness.livenessFrames,
                 min_similarity: oneFaceThreshold,
             });
             setPopupText(result.message ?? "One-face check-in success");
+            setScanStatusText("Liveness passed. One-face check-in completed.");
             setLastSeenByStudent((prev) => ({
                 ...prev,
                 [getSeenKey(sessionId, Number(resolvedStudentId))]: new Date().toISOString(),
@@ -663,7 +817,16 @@ export default function AttendancePage() {
             await refreshEvents();
         } catch (err) {
             const message = err instanceof Error ? err.message : "Check-in failed";
-            setPopupText(message);
+            setScanStatusText(message);
+            if (isLivenessMessage(message)) {
+                showLivenessAlert(message);
+            } else {
+                setPopupText(message);
+                window.setTimeout(() => setPopupText(null), 1800);
+            }
+        } finally {
+            setIsRecognizing(false);
+            isRecognizingRef.current = false;
         }
 
         window.setTimeout(() => setPopupText(null), 1800);
@@ -679,7 +842,8 @@ export default function AttendancePage() {
         setDetections([]);
         setLastEventId(null);
         noFaceFrameCountRef.current = 0;
-        setScanStatusText("Scanning...");
+        clearLivenessAlert();
+        setScanStatusText("Scanning. Please turn your head slightly for liveness check.");
         timerRef.current = window.setInterval(() => {
             void scanRealtimeFrame();
         }, scanIntervalMs);
@@ -693,7 +857,9 @@ export default function AttendancePage() {
         setIsScanning(false);
         isScanningRef.current = false;
         setDetections([]);
+        setPopupText(null);
         noFaceFrameCountRef.current = 0;
+        clearLivenessAlert();
         setScanStatusText("Stopped");
     }
 
@@ -755,6 +921,34 @@ export default function AttendancePage() {
                                 {popupText && (
                                     <div className="absolute left-3 right-3 top-3 rounded-xl bg-slate-900/85 px-4 py-2.5 text-sm font-semibold text-slate-100 shadow-xl">
                                         {popupText}
+                                    </div>
+                                )}
+                                {livenessAlert && (
+                                    <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-red-300 bg-red-950/92 px-4 py-3 text-red-50 shadow-2xl ring-2 ring-red-500/40" role="alert">
+                                        <div className="flex items-start gap-3">
+                                            <div className="mt-0.5 rounded-lg bg-red-500/20 p-1.5 text-red-200">
+                                                <AlertTriangle className="h-5 w-5" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-xs font-black uppercase tracking-[0.18em] text-red-200">
+                                                    Liveness warning
+                                                </p>
+                                                <p className="mt-1 text-sm font-bold leading-snug text-white">
+                                                    {livenessAlert.message}
+                                                </p>
+                                                <p className="mt-1 text-xs font-medium text-red-100/90">
+                                                    Attendance was blocked. Use a real face and turn your head slightly left or right.
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="rounded-lg p-1 text-red-100 transition hover:bg-white/10 hover:text-white"
+                                                aria-label="Dismiss liveness warning"
+                                                onClick={clearLivenessAlert}
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
 
@@ -874,7 +1068,7 @@ export default function AttendancePage() {
                                 className="interactive-btn inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg border border-blue-300 bg-blue-50 px-3 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                                 data-role={canManageAttendance ? "teacher" : user.role}
                                 onClick={createCheckIn}
-                                disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn}
+                                disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn || isRecognizing}
                                 type="button"
                             >
                                 Single-Face Check-in
@@ -963,7 +1157,7 @@ export default function AttendancePage() {
                             type="button"
                             className="inline-flex h-10 items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                             onClick={createCheckIn}
-                            disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn}
+                            disabled={!canManageAttendance || !isAttendanceSynced || selectedStudentAlreadyCheckedIn || isRecognizing}
                         >
                             One-Face
                         </button>
@@ -999,6 +1193,34 @@ export default function AttendancePage() {
                                 {popupText && (
                                     <div className="absolute left-3 right-3 top-3 rounded-xl bg-slate-900/85 px-4 py-2.5 text-sm font-semibold text-slate-100 shadow-xl">
                                         {popupText}
+                                    </div>
+                                )}
+                                {livenessAlert && (
+                                    <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-red-300 bg-red-950/92 px-4 py-3 text-red-50 shadow-2xl ring-2 ring-red-500/40" role="alert">
+                                        <div className="flex items-start gap-3">
+                                            <div className="mt-0.5 rounded-lg bg-red-500/20 p-1.5 text-red-200">
+                                                <AlertTriangle className="h-5 w-5" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-xs font-black uppercase tracking-[0.18em] text-red-200">
+                                                    Liveness warning
+                                                </p>
+                                                <p className="mt-1 text-sm font-bold leading-snug text-white">
+                                                    {livenessAlert.message}
+                                                </p>
+                                                <p className="mt-1 text-xs font-medium text-red-100/90">
+                                                    Attendance was blocked. Use a real face and turn your head slightly left or right.
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="rounded-lg p-1 text-red-100 transition hover:bg-white/10 hover:text-white"
+                                                aria-label="Dismiss liveness warning"
+                                                onClick={clearLivenessAlert}
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
 
@@ -1050,7 +1272,7 @@ export default function AttendancePage() {
                                 <button
                                     className="interactive-btn inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 hover:shadow-md"
                                     onClick={createCheckIn}
-                                    disabled={!canManageAttendance}
+                                    disabled={!canManageAttendance || isRecognizing}
                                     type="button"
                                 >
                                     Check-in 1 Face
