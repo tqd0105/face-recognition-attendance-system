@@ -44,6 +44,101 @@ class FaceEngine:
         quality_score = float(getattr(face, 'det_score', 0.0))
         return embedding.tolist(), quality_score, bbox
 
+    @staticmethod
+    def _face_area(face: Any) -> float:
+        x1, y1, x2, y2 = [float(v) for v in face.bbox.tolist()]
+        return max(x2 - x1, 0.0) * max(y2 - y1, 0.0)
+
+    def _largest_face(self, faces: list[Any]) -> Any:
+        return max(faces, key=self._face_area)
+
+    @staticmethod
+    def _extract_pose_vector(face: Any) -> np.ndarray:
+        landmarks = np.array(getattr(face, 'kps', []), dtype=float)
+        if landmarks.shape[0] < 5 or landmarks.shape[1] < 2:
+            raise ValueError('LIVENESS_LANDMARKS_UNAVAILABLE')
+
+        left_eye, right_eye, nose, left_mouth, right_mouth = landmarks[:5]
+        eye_center = (left_eye + right_eye) / 2.0
+        mouth_center = (left_mouth + right_mouth) / 2.0
+        eye_distance = float(np.linalg.norm(right_eye - left_eye))
+        eye_mouth_distance = float(np.linalg.norm(mouth_center - eye_center))
+        if eye_distance < 1.0 or eye_mouth_distance < 1.0:
+            raise ValueError('LIVENESS_LANDMARKS_INVALID')
+
+        mouth_width = float(np.linalg.norm(right_mouth - left_mouth))
+        yaw_proxy = float((nose[0] - eye_center[0]) / eye_distance)
+        pitch_proxy = float((nose[1] - eye_center[1]) / eye_mouth_distance)
+        mouth_eye_ratio = float(mouth_width / eye_distance)
+
+        return np.array([yaw_proxy, pitch_proxy, mouth_eye_ratio], dtype=float)
+
+    def analyze_liveness(
+        self,
+        frame_base64_list: list[str],
+        min_frames: int,
+        min_pose_change: float,
+        min_quality: float,
+        same_face_similarity: float,
+    ) -> dict[str, Any]:
+        if len(frame_base64_list) < min_frames:
+            raise ValueError('LIVENESS_FRAMES_REQUIRED')
+
+        app = self._ensure_model()
+        pose_vectors: list[np.ndarray] = []
+        embeddings: list[list[float]] = []
+        quality_scores: list[float] = []
+
+        for frame_base64 in frame_base64_list:
+            image = self._decode_image_bytes(self.decode_base64_image(frame_base64))
+            faces = app.get(image)
+            if not faces:
+                raise ValueError('NO_FACE_DETECTED')
+
+            face = self._largest_face(faces)
+            quality_score = float(getattr(face, 'det_score', 0.0))
+            if quality_score < min_quality:
+                raise ValueError('LIVENESS_LOW_FACE_QUALITY')
+
+            pose_vectors.append(self._extract_pose_vector(face))
+            embeddings.append(np.array(face.normed_embedding, dtype=float).tolist())
+            quality_scores.append(quality_score)
+
+        same_face_scores = [
+            self.cosine_similarity(embeddings[index - 1], embeddings[index])
+            for index in range(1, len(embeddings))
+        ]
+        min_same_face_score = min(same_face_scores) if same_face_scores else 1.0
+        if min_same_face_score < same_face_similarity:
+            raise ValueError('LIVENESS_FACE_CHANGED')
+
+        pose_changes = [
+            float(np.linalg.norm(pose_vectors[index] - pose_vectors[index - 1]))
+            for index in range(1, len(pose_vectors))
+        ]
+        best_pose_change = max(pose_changes) if pose_changes else 0.0
+        average_pose_change = float(sum(pose_changes) / len(pose_changes)) if pose_changes else 0.0
+        if best_pose_change < min_pose_change:
+            return {
+                'live': False,
+                'error_code': 'LIVENESS_POSE_CHANGE_TOO_LOW',
+                'message': 'Liveness failed. Please turn your head left or right slightly, not just move the camera.',
+                'score': round(best_pose_change, 4),
+                'average_pose_change': round(average_pose_change, 4),
+                'min_pose_change': min_pose_change,
+                'min_same_face_similarity': round(min_same_face_score, 4),
+                'quality_score': round(float(min(quality_scores)), 4),
+            }
+
+        return {
+            'live': True,
+            'score': round(best_pose_change, 4),
+            'average_pose_change': round(average_pose_change, 4),
+            'min_pose_change': min_pose_change,
+            'min_same_face_similarity': round(min_same_face_score, 4),
+            'quality_score': round(float(min(quality_scores)), 4),
+        }
+
     def decode_base64_image(self, image_base64: str) -> bytes:
         if ',' in image_base64:
             image_base64 = image_base64.split(',', 1)[1]

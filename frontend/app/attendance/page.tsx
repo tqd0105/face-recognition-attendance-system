@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Clock3, Eye, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, Clock3, Eye, ShieldCheck, X } from "lucide-react";
 import { WebcamLiveIcons } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
 import { attendanceService } from "@/services/attendance.service";
@@ -14,10 +14,10 @@ import { sessionService } from "@/services/session.service";
 import type { AttendanceItem, RealtimeDetection, Session, Student } from "@/types/models";
 
 const FRAME_TOO_DARK_MESSAGE = "Frame too dark/blocked. Please do not cover the camera and improve lighting.";
-const LIVENESS_CHECKING_MESSAGE = "Checking liveness. Please move your head slightly.";
-const LIVENESS_FAILED_MESSAGE = "Liveness check failed. Please use a real face and move slightly, not a photo.";
-const LIVENESS_SAMPLE_COUNT = 4;
-const LIVENESS_SAMPLE_DELAY_MS = 120;
+const LIVENESS_CHECKING_MESSAGE = "Checking liveness. Please turn your head slightly left or right.";
+const LIVENESS_FAILED_MESSAGE = "Liveness check failed. Please use a real face and turn your head slightly, not a photo.";
+const LIVENESS_SAMPLE_COUNT = 6;
+const LIVENESS_SAMPLE_DELAY_MS = 180;
 const LIVENESS_SIGNATURE_POINTS = 320;
 const LIVENESS_MIN_DELTA = 3.2;
 const LIVENESS_REQUIRED_MOVING_FRAMES = 2;
@@ -27,6 +27,11 @@ type LivenessResult = {
     imageBase64?: string;
     livenessFrames?: string[];
     message?: string;
+};
+
+type LivenessAlert = {
+    message: string;
+    createdAt: number;
 };
 
 export default function AttendancePage() {
@@ -55,6 +60,7 @@ export default function AttendancePage() {
     const [students, setStudents] = useState<Student[]>([]);
     const [events, setEvents] = useState<AttendanceItem[]>(() => attendanceService.getLocal().slice(0, 20));
     const [popupText, setPopupText] = useState<string | null>(null);
+    const [livenessAlert, setLivenessAlert] = useState<LivenessAlert | null>(null);
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [lastEventId, setLastEventId] = useState<string | null>(null);
     const [detections, setDetections] = useState<RealtimeDetection[]>([]);
@@ -101,6 +107,27 @@ export default function AttendancePage() {
         }
         const code = matched.student_code ?? `Student #${matched.id}`;
         return `Student: ${matched.name}`;
+    }
+
+    function isLivenessMessage(message: string): boolean {
+        const normalized = message.toLowerCase();
+        return normalized.includes("liveness")
+            || normalized.includes("real face")
+            || normalized.includes("photo")
+            || normalized.includes("static")
+            || normalized.includes("turn your head");
+    }
+
+    function showLivenessAlert(message: string) {
+        setPopupText(null);
+        setLivenessAlert({
+            message,
+            createdAt: Date.now(),
+        });
+    }
+
+    function clearLivenessAlert() {
+        setLivenessAlert(null);
     }
 
     useEffect(() => {
@@ -640,14 +667,18 @@ export default function AttendancePage() {
             setIsRecognizing(true);
             isRecognizingRef.current = true;
             const liveness = await captureLiveFrameSet();
+            if (!isScanningRef.current || sessionIdRef.current.trim() !== activeSessionId) {
+                return;
+            }
+
             if (!liveness.ok || !liveness.imageBase64 || !liveness.livenessFrames) {
                 const message = liveness.message ?? LIVENESS_FAILED_MESSAGE;
                 setDetections([]);
-                setPopupText(message);
+                showLivenessAlert(message);
                 setScanStatusText(message);
-                window.setTimeout(() => setPopupText(null), 1800);
                 return;
             }
+            clearLivenessAlert();
 
             if (!isScanningRef.current || sessionIdRef.current.trim() !== activeSessionId) {
                 return;
@@ -707,10 +738,19 @@ export default function AttendancePage() {
                 await refreshEvents(activeSessionId);
             }
         } catch (err) {
+            if (!isScanningRef.current || sessionIdRef.current.trim() !== activeSessionId) {
+                return;
+            }
+
             const message = err instanceof Error ? err.message : "Realtime recognize failed";
-            setPopupText(message);
             setScanStatusText(message);
-            window.setTimeout(() => setPopupText(null), 1600);
+            if (isLivenessMessage(message)) {
+                setDetections([]);
+                showLivenessAlert(message);
+            } else {
+                setPopupText(message);
+                window.setTimeout(() => setPopupText(null), 1600);
+            }
         } finally {
             setIsRecognizing(false);
             isRecognizingRef.current = false;
@@ -755,11 +795,11 @@ export default function AttendancePage() {
             const liveness = await captureLiveFrameSet();
             if (!liveness.ok || !liveness.imageBase64 || !liveness.livenessFrames) {
                 const message = liveness.message ?? LIVENESS_FAILED_MESSAGE;
-                setPopupText(message);
+                showLivenessAlert(message);
                 setScanStatusText(message);
-                window.setTimeout(() => setPopupText(null), 1800);
                 return;
             }
+            clearLivenessAlert();
 
             const result = await attendanceService.checkInOneFace({
                 session_id: Number(sessionId),
@@ -777,8 +817,13 @@ export default function AttendancePage() {
             await refreshEvents();
         } catch (err) {
             const message = err instanceof Error ? err.message : "Check-in failed";
-            setPopupText(message);
             setScanStatusText(message);
+            if (isLivenessMessage(message)) {
+                showLivenessAlert(message);
+            } else {
+                setPopupText(message);
+                window.setTimeout(() => setPopupText(null), 1800);
+            }
         } finally {
             setIsRecognizing(false);
             isRecognizingRef.current = false;
@@ -797,7 +842,8 @@ export default function AttendancePage() {
         setDetections([]);
         setLastEventId(null);
         noFaceFrameCountRef.current = 0;
-        setScanStatusText("Scanning. Please move your head slightly for liveness check.");
+        clearLivenessAlert();
+        setScanStatusText("Scanning. Please turn your head slightly for liveness check.");
         timerRef.current = window.setInterval(() => {
             void scanRealtimeFrame();
         }, scanIntervalMs);
@@ -811,7 +857,9 @@ export default function AttendancePage() {
         setIsScanning(false);
         isScanningRef.current = false;
         setDetections([]);
+        setPopupText(null);
         noFaceFrameCountRef.current = 0;
+        clearLivenessAlert();
         setScanStatusText("Stopped");
     }
 
@@ -873,6 +921,34 @@ export default function AttendancePage() {
                                 {popupText && (
                                     <div className="absolute left-3 right-3 top-3 rounded-xl bg-slate-900/85 px-4 py-2.5 text-sm font-semibold text-slate-100 shadow-xl">
                                         {popupText}
+                                    </div>
+                                )}
+                                {livenessAlert && (
+                                    <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-red-300 bg-red-950/92 px-4 py-3 text-red-50 shadow-2xl ring-2 ring-red-500/40" role="alert">
+                                        <div className="flex items-start gap-3">
+                                            <div className="mt-0.5 rounded-lg bg-red-500/20 p-1.5 text-red-200">
+                                                <AlertTriangle className="h-5 w-5" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-xs font-black uppercase tracking-[0.18em] text-red-200">
+                                                    Liveness warning
+                                                </p>
+                                                <p className="mt-1 text-sm font-bold leading-snug text-white">
+                                                    {livenessAlert.message}
+                                                </p>
+                                                <p className="mt-1 text-xs font-medium text-red-100/90">
+                                                    Attendance was blocked. Use a real face and turn your head slightly left or right.
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="rounded-lg p-1 text-red-100 transition hover:bg-white/10 hover:text-white"
+                                                aria-label="Dismiss liveness warning"
+                                                onClick={clearLivenessAlert}
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
 
@@ -1117,6 +1193,34 @@ export default function AttendancePage() {
                                 {popupText && (
                                     <div className="absolute left-3 right-3 top-3 rounded-xl bg-slate-900/85 px-4 py-2.5 text-sm font-semibold text-slate-100 shadow-xl">
                                         {popupText}
+                                    </div>
+                                )}
+                                {livenessAlert && (
+                                    <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-red-300 bg-red-950/92 px-4 py-3 text-red-50 shadow-2xl ring-2 ring-red-500/40" role="alert">
+                                        <div className="flex items-start gap-3">
+                                            <div className="mt-0.5 rounded-lg bg-red-500/20 p-1.5 text-red-200">
+                                                <AlertTriangle className="h-5 w-5" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-xs font-black uppercase tracking-[0.18em] text-red-200">
+                                                    Liveness warning
+                                                </p>
+                                                <p className="mt-1 text-sm font-bold leading-snug text-white">
+                                                    {livenessAlert.message}
+                                                </p>
+                                                <p className="mt-1 text-xs font-medium text-red-100/90">
+                                                    Attendance was blocked. Use a real face and turn your head slightly left or right.
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="rounded-lg p-1 text-red-100 transition hover:bg-white/10 hover:text-white"
+                                                aria-label="Dismiss liveness warning"
+                                                onClick={clearLivenessAlert}
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
 
