@@ -142,11 +142,6 @@ exports.startSession = async (req, res) => {
 			return res.status(400).json({ message: 'Session is already active.' });
 		}
 
-		const endDateTime = new Date(`${sessionCheck.rows[0].session_date}T${sessionCheck.rows[0].end_time}`);
-		if (!Number.isNaN(endDateTime.getTime()) && endDateTime.getTime() <= Date.now()) {
-			return res.status(400).json({ message: 'This session has already passed its end time.' });
-		}
-
 		const courseClassId = sessionCheck.rows[0].course_class_id;
 
 		const vectorQuery = `

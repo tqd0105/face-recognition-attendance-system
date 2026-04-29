@@ -37,6 +37,12 @@ function toNumeric(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function calculateAttendanceStatus(endDatetimeValue) {
+    const endDatetime = new Date(endDatetimeValue);
+    const now = new Date();
+    return now > endDatetime ? 'late' : 'present';
+}
+
 function rejectInvalidLiveness(req, res) {
     const liveness = verifyLivenessPayload(req.body);
     if (liveness.ok) {
@@ -142,7 +148,7 @@ exports.checkIn = async (req, res) => {
         }
 
         const sessionCheck = await pool.query(
-            `SELECT status, (session_date + start_time) AS start_datetime
+            `SELECT status, (session_date + end_time) AS end_datetime
             FROM Session WHERE id = $1`,
             [session_id]
         );
@@ -153,15 +159,7 @@ exports.checkIn = async (req, res) => {
             return res.status(400).json({ message: 'Session is not active (not started or already ended)!' });
         }
 
-        const startDatetime = new Date(sessionCheck.rows[0].start_datetime);
-        const now = new Date();
-
-        const graceMinutes = process.env.GRACE_PERIOD_MINUTES || 15;
-
-        const allowedTime = new Date(startDatetime.getTime());
-        allowedTime.setMinutes(allowedTime.getMinutes() + Number(graceMinutes));
-
-        const calculatedStatus = now > allowedTime ? 'late' : 'present';
+        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].end_datetime);
 
         // Keep the first check-in timestamp. If scanned again, only improve confidence.
         const result = await pool.query(
@@ -198,7 +196,8 @@ exports.recognizeRealtime = async (req, res) => {
         }
 
         const sessionCheck = await pool.query(
-            `SELECT id, status FROM Session WHERE id = $1`,
+            `SELECT id, status, (session_date + end_time) AS end_datetime
+             FROM Session WHERE id = $1`,
             [session_id]
         );
         if (sessionCheck.rows.length === 0) {
@@ -207,6 +206,7 @@ exports.recognizeRealtime = async (req, res) => {
         if (sessionCheck.rows[0].status !== 'active') {
             return res.status(400).json({ message: 'Session is not active. Please start the session before realtime scanning.' });
         }
+        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].end_datetime);
 
         const liveness = rejectInvalidLiveness(req, res);
         if (!liveness) {
@@ -366,12 +366,12 @@ exports.recognizeRealtime = async (req, res) => {
 
             const attendance = await pool.query(
                 `INSERT INTO Attendance (session_id, student_id, status, confidence_score)
-                 VALUES ($1, $2, 'present', $3)
+                 VALUES ($1, $2, $3, $4)
                  ON CONFLICT (session_id, student_id)
                  DO UPDATE SET
                     confidence_score = GREATEST(Attendance.confidence_score, EXCLUDED.confidence_score)
                  RETURNING id, session_id, student_id, status, confidence_score, check_in_time, (xmax = 0) AS inserted`,
-                [session_id, studentId, similarity]
+                [session_id, studentId, calculatedStatus, similarity]
             );
 
             const attendanceRow = attendance.rows[0];
@@ -391,7 +391,7 @@ exports.recognizeRealtime = async (req, res) => {
                 face_area_ratio: faceAreaRatio,
                 bbox,
                 reason: inserted
-                    ? 'Check-in successful'
+                    ? (calculatedStatus === 'late' ? 'Check-in successful (late)' : 'Check-in successful')
                     : `Already checked in (${new Date(attendanceRow.check_in_time).toLocaleTimeString('en-GB', { hour12: false })})`,
             });
         }
@@ -431,7 +431,7 @@ exports.checkInOneFace = async (req, res) => {
         }
 
         const sessionCheck = await pool.query(
-            `SELECT status, (session_date + start_time) AS start_datetime FROM Session WHERE id = $1`,
+            `SELECT status, (session_date + end_time) AS end_datetime FROM Session WHERE id = $1`,
             [session_id]
         );
         if (sessionCheck.rows.length === 0) {
@@ -529,12 +529,7 @@ exports.checkInOneFace = async (req, res) => {
             return res.status(422).json({ message: `Face is too small in frame (${faceAreaRatio.toFixed(3)} < ${minFaceAreaRatio.toFixed(3)}).` });
         }
 
-        const startDatetime = new Date(sessionCheck.rows[0].start_datetime);
-        const now = new Date();
-        const graceMinutes = process.env.GRACE_PERIOD_MINUTES || 15;
-        const allowedTime = new Date(startDatetime.getTime());
-        allowedTime.setMinutes(allowedTime.getMinutes() + Number(graceMinutes));
-        const calculatedStatus = now > allowedTime ? 'late' : 'present';
+        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].end_datetime);
 
         const attendance = await pool.query(
             `INSERT INTO Attendance (session_id, student_id, status, confidence_score)
