@@ -56,6 +56,52 @@ function rejectInvalidLiveness(req, res) {
     return null;
 }
 
+function readLivenessFrames(body) {
+    const frameSets = [
+        body?.liveness_frames,
+        body?.livenessFrames,
+        body?.image_frames,
+        body?.imageFrames,
+    ];
+
+    const frames = frameSets.find((value) => Array.isArray(value));
+    return Array.isArray(frames) ? frames : [];
+}
+
+async function verifyAiLiveness(req, res, aiServiceUrl, aiServiceToken) {
+    const frames = readLivenessFrames(req.body);
+    try {
+        const response = await axios.post(
+            `${aiServiceUrl}/ai/liveness`,
+            { frames },
+            {
+                headers: {
+                    'X-Service-Token': aiServiceToken,
+                },
+            }
+        );
+
+        return response?.data ?? { live: true };
+    } catch (aiError) {
+        const statusCode = aiError?.response?.status;
+        const detail = aiError?.response?.data?.detail;
+        const detailCode = typeof detail?.error_code === 'string' ? detail.error_code : null;
+        const detailMessage = typeof detail?.message === 'string' ? detail.message : null;
+
+        if (statusCode && statusCode >= 400 && statusCode < 500) {
+            res.status(422).json({
+                message: detailMessage || 'Liveness verification failed. Please turn your head slightly and try again.',
+                error_code: detailCode || 'AI_LIVENESS_FAILED',
+                liveness: detail || null,
+            });
+            return null;
+        }
+
+        res.status(503).json({ message: 'AI Service is unavailable during liveness verification.' });
+        return null;
+    }
+}
+
 // @desc    Nhận kết quả điểm danh (thường do hệ thống AI gọi)
 // @route   POST /api/attendance/check-in
 // @access  Private (Chỉ giảng viên mở buổi học mới được điểm danh)
@@ -171,6 +217,10 @@ exports.recognizeRealtime = async (req, res) => {
         const minFaceQuality = toNumeric(process.env.ATTENDANCE_MIN_FACE_QUALITY, 0.75);
         const minFaceAreaRatio = toNumeric(process.env.ATTENDANCE_MIN_FACE_AREA_RATIO, 0.03);
         const { aiServiceUrl, aiServiceToken } = resolveAiConfig();
+        const aiLiveness = await verifyAiLiveness(req, res, aiServiceUrl, aiServiceToken);
+        if (!aiLiveness) {
+            return;
+        }
 
         let aiResponse;
         try {
@@ -357,6 +407,7 @@ exports.recognizeRealtime = async (req, res) => {
                     moving_pairs: liveness.moving_pairs,
                     required_moving_pairs: liveness.required_moving_pairs,
                     skipped: Boolean(liveness.skipped),
+                    ai: aiLiveness,
                 },
                 detections,
                 checked_in: checkedIn,
@@ -414,6 +465,10 @@ exports.checkInOneFace = async (req, res) => {
         const minFaceQuality = toNumeric(process.env.ATTENDANCE_MIN_FACE_QUALITY, 0.75);
         const minFaceAreaRatio = toNumeric(process.env.ATTENDANCE_MIN_FACE_AREA_RATIO, 0.03);
         const { aiServiceUrl, aiServiceToken } = resolveAiConfig();
+        const aiLiveness = await verifyAiLiveness(req, res, aiServiceUrl, aiServiceToken);
+        if (!aiLiveness) {
+            return;
+        }
 
         let aiResponse;
         try {
@@ -504,6 +559,7 @@ exports.checkInOneFace = async (req, res) => {
                 moving_pairs: liveness.moving_pairs,
                 required_moving_pairs: liveness.required_moving_pairs,
                 skipped: Boolean(liveness.skipped),
+                ai: aiLiveness,
             },
         });
     } catch (error) {

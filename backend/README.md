@@ -60,7 +60,7 @@ Realtime recognition endpoints require multi-frame liveness proof by default:
 - `POST /api/attendance/recognize`
 - `POST /api/attendance/check-in-one-face`
 
-Clients should send the normal `image_base64` used for recognition plus `liveness_frames`, an array of recent camera frame base64 strings captured while the user moves slightly.
+Clients should send the normal `image_base64` used for recognition plus `liveness_frames`, an array of recent camera frame base64 strings captured while the user turns their head slightly left or right.
 
 ```json
 {
