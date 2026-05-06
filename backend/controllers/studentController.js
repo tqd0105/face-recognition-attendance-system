@@ -112,7 +112,6 @@ exports.updateStudent = async (req, res) => {
 // @access  Private
 exports.deleteStudent = async (req, res) => {
     const { id } = req.params;
-
     try {
         // Soft delete: Không dùng lệnh DELETE FROM, chỉ UPDATE status
         const deletedStudent = await pool.query(
