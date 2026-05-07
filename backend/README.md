@@ -24,6 +24,8 @@ cp .env.example .env
 - `AI_SERVICE_URL=http://localhost:8000`
 - `AI_SERVICE_TOKEN=<must match AI service token>`
 - `ADMIN_EMAILS=anhnv@ut.edu.vn`
+- `SESSION_LIFECYCLE_INTERVAL_MS=15000`
+- `SESSION_TIMEZONE=Asia/Ho_Chi_Minh`
 
 ## Database Import
 
@@ -76,3 +78,16 @@ Clients should send the normal `image_base64` used for recognition plus `livenes
 ```
 
 Set `ATTENDANCE_REQUIRE_LIVENESS=false` only for local debugging or automated tests.
+
+## Session Auto Start/Stop
+
+The backend has a lifecycle scheduler that automatically:
+
+- starts `scheduled` sessions when local session time reaches `start_time`
+- completes `active` sessions when local session time reaches `end_time`
+- cancels `scheduled` sessions that fully pass their end time without starting
+
+Use these environment variables to control the scheduler:
+
+- `SESSION_LIFECYCLE_INTERVAL_MS` how often the job runs, default `15000`
+- `SESSION_TIMEZONE` timezone used when comparing `session_date + start_time/end_time`, default `Asia/Ho_Chi_Minh`

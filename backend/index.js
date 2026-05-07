@@ -81,6 +81,18 @@ function resolveAiConfig() {
   };
 }
 
+function toNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveSessionLifecycleConfig() {
+  return {
+    intervalMs: toNumber(process.env.SESSION_LIFECYCLE_INTERVAL_MS, 15000),
+    timezone: String(process.env.SESSION_TIMEZONE || 'Asia/Ho_Chi_Minh').trim() || 'Asia/Ho_Chi_Minh',
+  };
+}
+
 function parseEmbedding(rawEmbedding) {
   if (Array.isArray(rawEmbedding)) {
     return rawEmbedding.map((value) => Number(value));
@@ -218,17 +230,19 @@ async function runSessionLifecycleJob() {
 
   isSessionLifecycleJobRunning = true;
   try {
-    const sessionsToAutoStart = await db.query(
+    const { timezone } = resolveSessionLifecycleConfig();
+    const sessionsToActivate = await db.query(
       `SELECT id, course_class_id
        FROM Session
-       WHERE status = 'scheduled'
-         AND (session_date + start_time) <= NOW()
-         AND (session_date + end_time) > NOW()
+       WHERE status IN ('scheduled', 'completed')
+         AND (session_date + start_time) <= (NOW() AT TIME ZONE $1)
+         AND (session_date + end_time) > (NOW() AT TIME ZONE $1)
        ORDER BY session_date ASC, start_time ASC
-       LIMIT 50`
+       LIMIT 50`,
+      [timezone]
     );
 
-    for (const row of sessionsToAutoStart.rows) {
+    for (const row of sessionsToActivate.rows) {
       const sessionId = Number(row.id);
       const courseClassId = Number(row.course_class_id);
 
@@ -236,20 +250,27 @@ async function runSessionLifecycleJob() {
         continue;
       }
 
+      let embeddingsLoaded = false;
+      let startWarning = null;
       try {
         await loadSessionEmbeddingsForAutoStart(sessionId, courseClassId);
+        embeddingsLoaded = true;
+      } catch (error) {
+        startWarning = error?.message || String(error);
+      }
 
+      try {
         const activated = await db.query(
           `UPDATE Session
            SET status = 'active'
            WHERE id = $1
-             AND status = 'scheduled'
+             AND status IN ('scheduled', 'completed')
            RETURNING id`,
           [sessionId]
         );
 
         // If another action changed status in parallel, unload to avoid stale cache in AI.
-        if (activated.rows.length === 0) {
+        if (activated.rows.length === 0 && embeddingsLoaded) {
           const { aiServiceUrl, aiServiceToken } = resolveAiConfig();
           await axios.post(
             `${aiServiceUrl}/ai/unload-embeddings`,
@@ -257,20 +278,37 @@ async function runSessionLifecycleJob() {
             { headers: { 'X-Service-Token': aiServiceToken } }
           ).catch(() => undefined);
         }
+
+        if (activated.rows.length > 0) {
+          if (startWarning) {
+            console.warn(
+              `Auto-activate set session ${sessionId} to active without ready face recognition data: ${startWarning}`
+            );
+          } else {
+            console.log(`Auto-activate set session ${sessionId} to active successfully.`);
+          }
+        }
       } catch (error) {
-        console.error(`Auto-start failed for session ${sessionId}:`, error?.message || error);
+        console.error(`Auto-activate status update failed for session ${sessionId}:`, error?.message || error);
       }
     }
 
-    // Active sessions stay open after end_time so late attendance can still be recorded until the teacher presses Stop.
-    const endedActive = { rows: [] };
+    const endedActive = await db.query(
+      `UPDATE Session
+       SET status = 'completed'
+       WHERE status IN ('scheduled', 'active')
+         AND (session_date + end_time) <= (NOW() AT TIME ZONE $1)
+       RETURNING id`,
+      [timezone]
+    );
 
     const overdueScheduled = await db.query(
       `UPDATE Session
        SET status = 'canceled'
        WHERE status = 'scheduled'
-         AND (session_date + end_time) <= NOW()
-       RETURNING id`
+         AND (session_date + end_time) <= (NOW() AT TIME ZONE $1)
+       RETURNING id`,
+      [timezone]
     );
 
     const sessionIdsToUnload = [
@@ -306,4 +344,4 @@ app.listen(PORT, () => {
 void bootstrapStudentCredentials();
 void bootstrapSessionSchema();
 void runSessionLifecycleJob();
-setInterval(runSessionLifecycleJob, Number(process.env.SESSION_LIFECYCLE_INTERVAL_MS || 60000));
+setInterval(runSessionLifecycleJob, resolveSessionLifecycleConfig().intervalMs);
