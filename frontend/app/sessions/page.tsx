@@ -63,6 +63,18 @@ export default function SessionsPage() {
 
     const createStatusDescription = "New sessions are always created as scheduled. Use Start and Stop actions in the list to change lifecycle status.";
 
+    const refreshSessions = useCallback(async (courseItems: CourseItem[]) => {
+        const courseIds = courseItems.map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id > 0);
+        if (courseIds.length === 0) {
+            sessionService.clearCache();
+            setSessions([]);
+            return;
+        }
+
+        const data = await sessionService.getAll(courseIds);
+        setSessions(data);
+    }, []);
+
     useEffect(() => {
         async function loadClassSources() {
             try {
@@ -77,9 +89,7 @@ export default function SessionsPage() {
                 }
 
                 try {
-                    const courseIds = courseData.map((item) => Number(item.id));
-                    const data = await sessionService.getAll(courseIds);
-                    setSessions(data);
+                    await refreshSessions(courseData);
                 } catch {
                     setSessions([]);
                 }
@@ -91,7 +101,27 @@ export default function SessionsPage() {
         }
 
         void loadClassSources();
-    }, []);
+    }, [refreshSessions]);
+
+    useEffect(() => {
+        if (courses.length === 0) {
+            return;
+        }
+
+        let isMounted = true;
+        const timer = setInterval(() => {
+            void refreshSessions(courses).catch(() => {
+                if (isMounted) {
+                    setSessions(sessionService.getLocal());
+                }
+            });
+        }, 15000);
+
+        return () => {
+            isMounted = false;
+            clearInterval(timer);
+        };
+    }, [courses, refreshSessions]);
 
     useEffect(() => {
         let timer: ReturnType<typeof setInterval> | null = null;
@@ -246,8 +276,7 @@ export default function SessionsPage() {
                 await sessionService.create(payload);
             }
             try {
-                const latest = await sessionService.getAll(courses.map((item) => Number(item.id)));
-                setSessions(latest);
+                await refreshSessions(courses);
             } catch {
                 setSessions(sessionService.getLocal());
             }
@@ -298,8 +327,7 @@ export default function SessionsPage() {
             setError(null);
             await sessionService.remove(pendingDeleteSession.id);
             setPendingDeleteSession(null);
-            const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
-            setSessions(latest);
+            await refreshSessions(courses);
         } catch (err) {
             const message = err instanceof Error ? err.message : "Cannot delete session";
             setError(message);
@@ -322,8 +350,7 @@ export default function SessionsPage() {
             setSessions((prev) => prev.map((session) => (session.id === item.id ? { ...session, ...updated } : session)));
 
             try {
-                const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
-                setSessions(latest);
+                await refreshSessions(courses);
             } catch {
                 // Keep optimistic update when refresh fails.
             }
@@ -348,8 +375,7 @@ export default function SessionsPage() {
             setSessions((prev) => prev.map((session) => (session.id === item.id ? { ...session, ...updated } : session)));
 
             try {
-                const latest = await sessionService.getAll(courses.map((course) => Number(course.id)));
-                setSessions(latest);
+                await refreshSessions(courses);
             } catch {
                 // Keep optimistic update when refresh fails.
             }
@@ -548,7 +574,8 @@ export default function SessionsPage() {
 
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
                     <div>
-                        <p className="ml-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">List Session</p>
+                        <p className="ml-4 text-sm font-bold uppercase tracking-[0.16em] text-slate-700">List Session</p>
+                        <p className="text-xs text-gray-500">The status will be checked every 15 seconds based on the established time to update the correct action.</p>
                     </div>
                     <button
                         type="button"
