@@ -87,7 +87,8 @@ exports.getGuardrails = async (_req, res) => {
             biometric_duplicate_similarity_threshold: toNumber(process.env.BIOMETRIC_DUPLICATE_SIMILARITY_THRESHOLD, 0.20),
             biometric_self_vs_other_margin: toNumber(process.env.BIOMETRIC_SELF_VS_OTHER_MARGIN, 0.03),
             biometric_strict_uniqueness: String(process.env.BIOMETRIC_STRICT_UNIQUENESS || 'true').toLowerCase() !== 'false',
-            session_lifecycle_interval_ms: toNumber(process.env.SESSION_LIFECYCLE_INTERVAL_MS, 60000),
+            session_lifecycle_interval_ms: toNumber(process.env.SESSION_LIFECYCLE_INTERVAL_MS, 15000),
+            session_timezone: String(process.env.SESSION_TIMEZONE || 'Asia/Ho_Chi_Minh'),
         },
     });
 };
