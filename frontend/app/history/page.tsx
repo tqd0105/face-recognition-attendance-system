@@ -26,7 +26,7 @@ export default function HistoryPage() {
                     session_id: 0,
                     student_id: 0,
                     status: item.status,
-                    confidence_score: undefined,
+                    confidence_score: item.confidence_score,
                     check_in_time: item.check_in_time ?? new Date().toISOString(),
                     created_at: item.check_in_time ?? new Date().toISOString(),
                     course_name: item.course_name,
