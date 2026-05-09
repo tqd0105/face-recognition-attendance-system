@@ -215,6 +215,31 @@ async function bootstrapStudentCredentials() {
   }
 }
 
+async function bootstrapTeacherRoleSchema() {
+  try {
+    await db.query("ALTER TABLE Teacher ADD COLUMN IF NOT EXISTS role VARCHAR(20)");
+    await db.query("UPDATE Teacher SET role = 'teacher' WHERE role IS NULL OR role NOT IN ('teacher', 'admin')");
+    await db.query("ALTER TABLE Teacher ALTER COLUMN role SET DEFAULT 'teacher'");
+    await db.query("ALTER TABLE Teacher ALTER COLUMN role SET NOT NULL");
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'teacher_role_check'
+            AND conrelid = 'teacher'::regclass
+        ) THEN
+          ALTER TABLE Teacher
+          ADD CONSTRAINT teacher_role_check CHECK (role IN ('teacher', 'admin'));
+        END IF;
+      END $$;
+    `);
+  } catch (error) {
+    console.error('Teacher role schema bootstrap error:', error.message);
+  }
+}
+
 async function bootstrapSessionSchema() {
   try {
     await db.query('ALTER TABLE Session ADD COLUMN IF NOT EXISTS session_name VARCHAR(150)');
@@ -342,6 +367,7 @@ app.listen(PORT, () => {
 });
 
 void bootstrapStudentCredentials();
+void bootstrapTeacherRoleSchema();
 void bootstrapSessionSchema();
 void runSessionLifecycleJob();
 setInterval(runSessionLifecycleJob, resolveSessionLifecycleConfig().intervalMs);

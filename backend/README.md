@@ -23,7 +23,8 @@ cp .env.example .env
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 - `AI_SERVICE_URL=http://localhost:8000`
 - `AI_SERVICE_TOKEN=<must match AI service token>`
-- `ADMIN_EMAILS=anhnv@ut.edu.vn`
+- `ADMIN_SEED_EMAIL=admin@ut.edu.vn`
+- `ADMIN_SEED_PASSWORD=123456`
 - `SESSION_LIFECYCLE_INTERVAL_MS=15000`
 - `SESSION_TIMEZONE=Asia/Ho_Chi_Minh`
 
@@ -38,6 +39,7 @@ psql -U <db_user> -d <db_name> -f database.sql
 The SQL file contains the latest schema used by current backend features, including:
 
 - role-based auth support
+- teacher/admin roles stored in `Teacher.role`
 - student credentials (`password_hash`)
 - session and attendance tables/constraints
 

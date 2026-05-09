@@ -1,10 +1,16 @@
 const pool = require('../config/db');
 
+function isAdminRole(role) {
+    return String(role || '').toLowerCase() === 'admin';
+}
+
 // @desc    Lấy danh sách Lớp học phần CỦA GIẢNG VIÊN ĐANG ĐĂNG NHẬP
 // @route   GET /api/courses-classes
 // @access  Private
 exports.getCourseClasses = async (req, res) => {
     try {
+        const isAdmin = isAdminRole(req.user?.role);
+        const values = [];
         const result = await pool.query(
             `SELECT
                 cc.*,
@@ -44,9 +50,9 @@ exports.getCourseClasses = async (req, res) => {
                 LEFT JOIN Home_class hc ON hc.id = x.home_class_id
                 GROUP BY x.course_class_id
              ) hc ON hc.course_class_id = cc.id
-             WHERE cc.teacher_id = $1
+             ${isAdmin ? '' : 'WHERE cc.teacher_id = $1'}
              ORDER BY cc.created_at DESC`,
-            [req.user.id]
+            isAdmin ? values : [req.user.id]
         );
         res.status(200).json({
             message: 'Fetched course classes successfully',
@@ -64,14 +70,15 @@ exports.getCourseClasses = async (req, res) => {
 exports.getCourseClassById = async (req, res) => {
     try {
         const { id } = req.params;
+        const isAdmin = isAdminRole(req.user?.role);
 
         const result = await pool.query(
             `SELECT cc.*, t.teacher_code, hc.class_code AS home_class_code
              FROM Course_classes cc
              LEFT JOIN Teacher t ON t.id = cc.teacher_id
              LEFT JOIN Home_class hc ON hc.id = cc.home_class_id
-             WHERE cc.id = $1 AND cc.teacher_id = $2`,
-            [id, req.user.id]
+             WHERE cc.id = $1 ${isAdmin ? '' : 'AND cc.teacher_id = $2'}`,
+            isAdmin ? [id] : [id, req.user.id]
         );
 
         if (result.rows.length === 0) {
@@ -93,7 +100,8 @@ exports.getCourseClassById = async (req, res) => {
 // @access  Private
 exports.createCourseClass = async (req, res) => {
     try {
-        const { course_code, course_name, semester, home_class_id } = req.body;
+        const { course_code, course_name, semester, home_class_id, teacher_id } = req.body;
+        const isAdmin = isAdminRole(req.user?.role);
 
         const checkExist = await pool.query(
             'SELECT * FROM Course_classes WHERE course_code = $1',
@@ -110,11 +118,12 @@ exports.createCourseClass = async (req, res) => {
             }
         }
 
+        const resolvedTeacherId = isAdmin && teacher_id ? teacher_id : req.user.id;
         const newCourse = await pool.query(
             `INSERT INTO Course_classes (course_code, course_name, semester, home_class_id, teacher_id) 
             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-            [course_code, course_name, semester, home_class_id ?? null, req.user.id]
-        )
+            [course_code, course_name, semester, home_class_id ?? null, resolvedTeacherId]
+        );
 
         res.status(201).json({
             message: 'Course class created successfully!',
@@ -131,12 +140,13 @@ exports.createCourseClass = async (req, res) => {
 // @access  Private
 exports.updateCourseClass = async (req, res) => {
     const { id } = req.params;
-    const { course_code, course_name, semester, home_class_id } = req.body;
+    const { course_code, course_name, semester, home_class_id, teacher_id } = req.body;
+    const isAdmin = isAdminRole(req.user?.role);
 
     try {
         const ownership = await pool.query(
-            'SELECT id FROM Course_classes WHERE id = $1 AND teacher_id = $2',
-            [id, req.user.id]
+            `SELECT id, teacher_id FROM Course_classes WHERE id = $1 ${isAdmin ? '' : 'AND teacher_id = $2'}`,
+            isAdmin ? [id] : [id, req.user.id]
         );
         if (ownership.rows.length === 0) {
             return res.status(404).json({ message: 'Course class not found or no update permission!' });
@@ -157,12 +167,19 @@ exports.updateCourseClass = async (req, res) => {
             }
         }
 
+        const currentTeacherId = ownership.rows[0].teacher_id;
+        const resolvedTeacherId = isAdmin && teacher_id ? teacher_id : currentTeacherId;
+
         const updated = await pool.query(
             `UPDATE Course_classes
-             SET course_code = $1, course_name = $2, semester = $3, home_class_id = $4
-             WHERE id = $5 AND teacher_id = $6
+             SET course_code = $1,
+                 course_name = $2,
+                 semester = $3,
+                 home_class_id = $4,
+                 teacher_id = $5
+             WHERE id = $6
              RETURNING *`,
-            [course_code, course_name, semester, home_class_id ?? null, id, req.user.id]
+            [course_code, course_name, semester, home_class_id ?? null, resolvedTeacherId, id]
         );
 
         return res.status(200).json({
@@ -187,18 +204,24 @@ exports.enrollStudents = async (req, res) => {
     }
 
     try {
+        const isAdmin = isAdminRole(req.user?.role);
         const checkClass = await pool.query(
-            'SELECT * FROM Course_classes WHERE id = $1 AND teacher_id = $2',
-            [id, req.user.id]
+            `SELECT * FROM Course_classes WHERE id = $1 ${isAdmin ? '' : 'AND teacher_id = $2'}`,
+            isAdmin ? [id] : [id, req.user.id]
         );
         if (checkClass.rows.length === 0) {
             return res.status(403).json({ message: 'Course class does not exist or permission denied!' });
         }
+        const enrolledBy = checkClass.rows[0].teacher_id ?? null;
         const promises = student_ids.map(student_id => {
             return pool.query(
-                `INSERT INTO Enrollments (student_id, course_class_id) 
-                 VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-                [student_id, id]
+                `INSERT INTO Enrollments (student_id, course_class_id, enrolled_by)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (student_id, course_class_id, status)
+                 DO UPDATE SET
+                    enrolled_by = EXCLUDED.enrolled_by,
+                    updated_at = CURRENT_TIMESTAMP`,
+                [student_id, id, enrolledBy]
             );
         });
         await Promise.all(promises);
@@ -217,9 +240,10 @@ exports.enrollStudents = async (req, res) => {
 exports.getEnrolledStudents = async (req, res) => {
     const { id } = req.params;
     try {
+        const isAdmin = isAdminRole(req.user?.role);
         const checkClass = await pool.query(
-            'SELECT * FROM Course_classes WHERE id = $1 AND teacher_id = $2',
-            [id, req.user.id]
+            `SELECT * FROM Course_classes WHERE id = $1 ${isAdmin ? '' : 'AND teacher_id = $2'}`,
+            isAdmin ? [id] : [id, req.user.id]
         );
         if (checkClass.rows.length === 0) {
             return res.status(403).json({ message: 'Course class does not exist or access denied!' });
@@ -250,11 +274,12 @@ exports.deleteCourseClass = async (req, res) => {
     const { id } = req.params;
 
     try {
+        const isAdmin = isAdminRole(req.user?.role);
         const deleted = await pool.query(
             `DELETE FROM Course_classes
-             WHERE id = $1 AND teacher_id = $2
+             WHERE id = $1 ${isAdmin ? '' : 'AND teacher_id = $2'}
              RETURNING *`,
-            [id, req.user.id]
+            isAdmin ? [id] : [id, req.user.id]
         );
 
         if (deleted.rows.length === 0) {

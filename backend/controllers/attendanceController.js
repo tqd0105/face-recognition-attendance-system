@@ -448,7 +448,7 @@ exports.checkInOneFace = async (req, res) => {
              WHERE id = $1`,
             [student_id]
         );
-        
+
         if (studentCheck.rows.length === 0) {
             return res.status(404).json({ message: 'Student not found!' });
         }
@@ -724,9 +724,15 @@ exports.getStudentAttendanceHistory = async (req, res) => {
 
     try {
         let query = `
-            SELECT a.id AS attendance_id, a.status, a.check_in_time, 
-                   s.session_date, s.start_time, s.end_time,
-                   c.course_name, c.course_code
+            SELECT a.id AS attendance_id,
+                   a.status,
+                   a.check_in_time,
+                   a.confidence_score,
+                   s.session_date,
+                   s.start_time,
+                   s.end_time,
+                   c.course_name,
+                   c.course_code
             FROM Attendance a
             JOIN Session s ON a.session_id = s.id
             JOIN Course_classes c ON s.course_class_id = c.id
@@ -851,7 +857,10 @@ exports.getMyDashboard = async (req, res) => {
             LEFT JOIN Attendance a ON a.session_id = se.id AND a.student_id = e.student_id
             WHERE e.student_id = $1
               AND se.status <> 'canceled'
-              AND (se.session_date + se.end_time) <= (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+              AND (
+                  (se.session_date + se.end_time) <= (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+                  OR a.status IS NOT NULL
+              )
             ORDER BY se.session_date DESC, se.start_time DESC`,
             [studentId]
         );
