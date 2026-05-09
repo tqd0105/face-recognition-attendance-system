@@ -13,9 +13,11 @@ CREATE TABLE IF NOT EXISTS Teacher (
     teacher_name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'teacher',
     status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT teacher_role_check CHECK (role IN ('teacher', 'admin'))
 );
 
 CREATE TABLE IF NOT EXISTS Home_class (
@@ -59,10 +61,36 @@ CREATE TABLE IF NOT EXISTS Course_classes (
 );
 
 CREATE TABLE IF NOT EXISTS Enrollments (
+    id SERIAL PRIMARY KEY,                          -- ① Thêm ID riêng
     student_id INTEGER REFERENCES Student(id) ON DELETE CASCADE,
     course_class_id INTEGER REFERENCES Course_classes(id) ON DELETE CASCADE,
-    PRIMARY KEY (student_id, course_class_id)
+    enrolled_by INTEGER REFERENCES Teacher(id) ON DELETE SET NULL,  -- ② Ai đăng ký?
+    status VARCHAR(20) DEFAULT 'active',            -- ③ Soft delete: 'active' hoặc 'inactive'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- ④ Khi nào đăng ký
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- ⑤ Sửa lần cuối
+    UNIQUE(student_id, course_class_id, status)     -- Tránh: Cùng sinh viên, cùng lớp, cùng status
 );
+
+CREATE OR REPLACE FUNCTION set_enrolled_by_from_course_class()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.enrolled_by IS NULL THEN
+        SELECT teacher_id INTO NEW.enrolled_by
+        FROM Course_classes
+        WHERE id = NEW.course_class_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_enrollments_set_enrolled_by
+BEFORE INSERT ON Enrollments
+FOR EACH ROW
+EXECUTE FUNCTION set_enrolled_by_from_course_class();
+
+CREATE INDEX IF NOT EXISTS idx_enrollments_course_class_id ON Enrollments(course_class_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_student_id ON Enrollments(student_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_status ON Enrollments(status);
 
 CREATE TABLE IF NOT EXISTS Session (
     id SERIAL PRIMARY KEY,
@@ -84,3 +112,4 @@ CREATE TABLE IF NOT EXISTS Attendance (
     status attendance_status DEFAULT 'present',
     confidence_score FLOAT,
     UNIQUE(session_id, student_id) 
+);

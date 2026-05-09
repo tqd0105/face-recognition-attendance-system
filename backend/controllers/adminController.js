@@ -16,6 +16,7 @@ exports.getOverview = async (_req, res) => {
 
         const [
             teachers,
+            admins,
             students,
             homeClasses,
             courseClasses,
@@ -23,7 +24,8 @@ exports.getOverview = async (_req, res) => {
             todayAttendance,
             totalAttendance,
         ] = await Promise.all([
-            pool.query('SELECT COUNT(*)::int AS total FROM Teacher'),
+            pool.query("SELECT COUNT(*)::int AS total FROM Teacher WHERE role = 'teacher'"),
+            pool.query("SELECT COUNT(*)::int AS total FROM Teacher WHERE role = 'admin'"),
             pool.query("SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'active')::int AS active, COUNT(*) FILTER (WHERE status <> 'active')::int AS inactive FROM Student"),
             pool.query('SELECT COUNT(*)::int AS total FROM Home_class'),
             pool.query('SELECT COUNT(*)::int AS total FROM Course_classes'),
@@ -50,6 +52,7 @@ exports.getOverview = async (_req, res) => {
             message: 'Admin overview fetched',
             data: {
                 teachers: Number(teachers.rows[0]?.total || 0),
+                admins: Number(admins.rows[0]?.total || 0),
                 students: {
                     total: Number(students.rows[0]?.total || 0),
                     active: Number(students.rows[0]?.active || 0),
