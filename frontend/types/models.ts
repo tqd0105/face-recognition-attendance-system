@@ -139,6 +139,7 @@ export type StudentAttendanceHistoryItem = {
   attendance_id: number;
   status: string;
   check_in_time?: string;
+  confidence_score?: number;
   session_date?: string;
   start_time?: string;
   end_time?: string;
