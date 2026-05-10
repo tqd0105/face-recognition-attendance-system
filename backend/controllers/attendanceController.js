@@ -588,6 +588,7 @@ exports.getAttendanceBySession = async (req, res) => {
                 hc.class_code AS home_class_code,
                 hc.major AS home_class_major,
                 hc.department AS home_class_department,
+                se.session_name,
                 se.session_date,
                 se.start_time,
                 se.end_time,
@@ -725,17 +726,22 @@ exports.getStudentAttendanceHistory = async (req, res) => {
     try {
         let query = `
             SELECT a.id AS attendance_id,
+                   a.session_id,
                    a.status,
                    a.check_in_time,
                    a.confidence_score,
+                   s.session_name,
                    s.session_date,
                    s.start_time,
                    s.end_time,
                    c.course_name,
-                   c.course_code
+                   c.course_code,
+                   st.student_code,
+                   st.name AS student_name
             FROM Attendance a
             JOIN Session s ON a.session_id = s.id
             JOIN Course_classes c ON s.course_class_id = c.id
+            JOIN Student st ON a.student_id = st.id
             WHERE a.student_id = $1
         `;
         let values = [student_id];
