@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS Session (
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     status session_status DEFAULT 'scheduled', 
+    created_by INTEGER REFERENCES Teacher(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CHECK (start_time < end_time)
 );
