@@ -400,10 +400,39 @@ export default function SessionsPage() {
                     return classCodeMap.get(classId) ?? `Class #${classId}`;
                 },
             },
-            { key: "sessionName", title: "Session Name", render: (row: Session) => row.session_name ?? "Session" },
+            {
+                key: "sessionName",
+                title: "Session Name",
+                className: "min-w-[200px] whitespace-nowrap",
+                render: (row: Session) => row.session_name ?? "Session",
+            },
             { key: "date", title: "Session Date", render: (row: Session) => formatSessionDate(row.session_date) },
             { key: "start", title: "Start Time", render: (row: Session) => row.start_time ?? "-" },
             { key: "end", title: "End Time", render: (row: Session) => row.end_time ?? "-" },
+            {
+                key: "createdBy",
+                title: "Created By",
+                render: (row: Session) =>
+                    row.created_by_label
+                    || (row.created_by_role === "admin"
+                        ? "admin"
+                        : row.created_by_code
+                            ? row.created_by_code
+                            : row.created_by_name ?? "Unknown"),
+            },
+            {
+                key: "attendance",
+                title: "Attendance",
+                render: (row: Session) => {
+                    const attended = row.attendance_count ?? 0;
+                    const enrolled = row.enrolled_count ?? 0;
+                    if (enrolled > 0) {
+                        return `${attended}/${enrolled}`;
+                    }
+
+                    return attended > 0 ? `${attended} attendance` : "None";
+                },
+            },
             { key: "status", title: "Status", render: (row: Session) => row.status ?? "scheduled" },
             {
                 key: "actions",

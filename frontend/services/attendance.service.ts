@@ -66,6 +66,7 @@ type AttendanceApiRow = {
   course_name?: string;
   teacher_id?: number;
   teacher_name?: string;
+  session_name?: string;
   session_date?: string;
   start_time?: string;
   end_time?: string;
@@ -107,6 +108,7 @@ function normalizeAttendanceItem(row: AttendanceApiRow): AttendanceItem {
     course_name: row.course_name,
     teacher_id: row.teacher_id,
     teacher_name: row.teacher_name,
+    session_name: row.session_name,
     session_date: row.session_date,
     session_start_time: row.start_time,
     session_end_time: row.end_time,
