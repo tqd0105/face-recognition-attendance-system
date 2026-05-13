@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ClipboardList, Clock3, CircleCheckBig } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { attendanceService } from "@/services/attendance.service";
+import { courseService } from "@/services/course.service";
+import { sessionService } from "@/services/session.service";
 import type { AttendanceItem, StudentAttendanceHistoryItem } from "@/types/models";
 import { HistoryIcons } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,60 +14,112 @@ export default function HistoryPage() {
     const { user } = useAuth();
     const [history, setHistory] = useState<AttendanceItem[]>(() => attendanceService.getLocal());
 
+    const formatSessionLabel = (row: Pick<AttendanceItem, "course_code" | "course_name" | "session_name" | "session_id" | "session_date" | "session_start_time" | "session_end_time">) => {
+        const courseLabel = row.course_code
+            ? `${row.course_code}${row.course_name ? ` - ${row.course_name}` : ""}`
+            : row.course_name || "Course";
+        const sessionLabel = row.session_name?.trim()
+            || (row.session_date ? `${row.session_date}${row.session_start_time ? ` ${row.session_start_time}` : ""}${row.session_end_time ? `-${row.session_end_time}` : ""}` : "Session");
+        return `${courseLabel} | ${sessionLabel}`;
+    };
+
     useEffect(() => {
-        async function loadStudentHistory() {
-            if (user.role !== "student") {
-                setHistory(attendanceService.getLocal());
+        async function loadHistory() {
+            if (user.role === "student") {
+                try {
+                    const rows: StudentAttendanceHistoryItem[] = await attendanceService.getMyHistory();
+                    const mapped: AttendanceItem[] = rows.map((item) => ({
+                        id: String(item.attendance_id),
+                        session_id: Number(item.session_id ?? 0),
+                        student_id: 0,
+                        status: item.status,
+                        confidence_score: item.confidence_score,
+                        check_in_time: item.check_in_time ?? new Date().toISOString(),
+                        created_at: item.check_in_time ?? new Date().toISOString(),
+                        course_name: item.course_name,
+                        course_code: item.course_code,
+                        session_name: item.session_name,
+                        session_date: item.session_date,
+                        session_start_time: item.start_time,
+                        session_end_time: item.end_time,
+                        student_code: item.student_code,
+                        student_name: item.student_name,
+                    }));
+                    setHistory(mapped);
+                } catch {
+                    setHistory([]);
+                }
                 return;
             }
 
             try {
-                const rows: StudentAttendanceHistoryItem[] = await attendanceService.getMyHistory();
-                const mapped: AttendanceItem[] = rows.map((item) => ({
-                    id: String(item.attendance_id),
-                    session_id: 0,
-                    student_id: 0,
-                    status: item.status,
-                    confidence_score: item.confidence_score,
-                    check_in_time: item.check_in_time ?? new Date().toISOString(),
-                    created_at: item.check_in_time ?? new Date().toISOString(),
-                    course_name: item.course_name,
-                    course_code: item.course_code,
-                    session_date: item.session_date,
-                    session_start_time: item.start_time,
-                    session_end_time: item.end_time,
-                }));
-                setHistory(mapped);
+                const courses = await courseService.getAll();
+                const courseIds = courses.map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id > 0);
+                if (courseIds.length === 0) {
+                    setHistory([]);
+                    return;
+                }
+                const sessions = await sessionService.getAll(courseIds);
+                if (sessions.length === 0) {
+                    setHistory([]);
+                    return;
+                }
+                const attendanceRows = await Promise.all(
+                    sessions.map((session) => attendanceService.getBySession(Number(session.id)).catch(() => []))
+                );
+                const merged = attendanceRows.flat();
+                merged.sort((a, b) => {
+                    const aTime = new Date(a.check_in_time ?? a.created_at).getTime();
+                    const bTime = new Date(b.check_in_time ?? b.created_at).getTime();
+                    return bTime - aTime;
+                });
+                setHistory(merged);
             } catch {
                 setHistory([]);
             }
+            return;
         }
 
-        void loadStudentHistory();
+        void loadHistory();
     }, [user.role]);
 
-    const columns = useMemo(
-        () => [
+    const columns = useMemo(() => {
+        const baseColumns = [
             {
                 key: "time",
                 title: "Check-in Time",
                 render: (row: AttendanceItem) => new Date(row.check_in_time ?? row.created_at).toLocaleString(),
             },
-            {
-                key: "session",
-                title: "Session",
+        ];
+
+        if (user.role !== "student") {
+            baseColumns.push({
+                key: "student",
+                title: "Student",
                 render: (row: AttendanceItem) =>
-                    row.course_code ? `${row.course_code}${row.course_name ? ` - ${row.course_name}` : ""}` : row.session_id,
-            },
+                    row.student_code
+                        ? `${row.student_code}${row.student_name ? ` - ${row.student_name}` : ""}`
+                        : row.student_name || "-",
+            });
+        }
+
+        baseColumns.push({
+            key: "session",
+            title: "Session",
+            render: (row: AttendanceItem) => formatSessionLabel(row),
+        });
+
+        baseColumns.push(
             { key: "status", title: "Status", render: (row: AttendanceItem) => row.status },
             {
                 key: "confidence",
                 title: "Confidence",
                 render: (row: AttendanceItem) => (typeof row.confidence_score === "number" ? row.confidence_score.toFixed(2) : "-"),
             },
-        ],
-        [],
-    );
+        );
+
+        return baseColumns;
+    }, [user.role]);
 
     const totalRecords = history.length;
     const presentCount = history.filter((item) => item.status === "present").length;

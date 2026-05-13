@@ -13,3 +13,15 @@ http.interceptors.request.use((config) => {
   }
   return config;
 });
+
+http.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Nß║┐u c├│ message tß╗½ server, g├ín n├│ v├áo error.message ─æß╗â dß╗à ─æß╗ìc
+    if (axios.isAxiosError(error) && error.response?.data?.message) {
+      error.message = error.response.data.message;
+    }
+    return Promise.reject(error);
+  }
+);
+

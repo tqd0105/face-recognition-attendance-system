@@ -142,11 +142,11 @@ export default function CoursesPage() {
 
     const columns = useMemo(
         () => [
-            { key: "code", title: "Course Class Code", render: (row: CourseItem) => row.course_code ?? "-" },
-            { key: "name", title: "Course Name", render: (row: CourseItem) => row.course_name ?? "-" },
-            { key: "linkedClass", title: "Linked Home Class", render: (row: CourseItem) => row.home_class_code ?? "-" },
-            { key: "semester", title: "Semester", render: (row: CourseItem) => row.semester ?? "-" },
-            { key: "teacher", title: "Teacher Code", render: (row: CourseItem) => row.teacher_code ?? row.teacher_id ?? "-" },
+            { key: "code", title: "Course Class Code", className: "whitespace-nowrap", render: (row: CourseItem) => row.course_code ?? "-" },
+            { key: "name", title: "Course Name", className: "min-w-[260px] whitespace-nowrap", render: (row: CourseItem) => row.course_name ?? "-" },
+            { key: "linkedClass", title: "Linked Home Class", className: "whitespace-nowrap", render: (row: CourseItem) => row.home_class_code ?? "-" },
+            { key: "semester", title: "Semester", className: "whitespace-nowrap", render: (row: CourseItem) => row.semester ?? "-" },
+            { key: "teacher", title: "Teacher Code", className: "whitespace-nowrap", render: (row: CourseItem) => row.teacher_code ?? row.teacher_id ?? "-" },
             // {
             //     key: "homeClasses",
             //     title: "Enrolled Home Classes",
@@ -176,6 +176,7 @@ export default function CoursesPage() {
             {
                 key: "actions",
                 title: "Actions",
+                className: "whitespace-nowrap",
                 render: (row: CourseItem) => (
                     <div className="flex gap-2">
                         <button
@@ -312,7 +313,7 @@ export default function CoursesPage() {
                         </div>
                     )}
                     <div>
-                        <label className="text-sm font-semibold text-slate-700" htmlFor="course-code">
+                        <label className="text-sm font-semibold text-slate-700 " htmlFor="course-code">
                             Course Class Code
                         </label>
                         <input

@@ -2,6 +2,7 @@ type Column<T> = {
     key: string;
     title: string;
     render: (row: T) => React.ReactNode;
+    className?: string;
 };
 
 type DataTableProps<T> = {
@@ -22,7 +23,7 @@ export function DataTable<T>({ columns, rows, emptyText = "No data", onRowClick 
                     <thead className="bg-slate-50">
                         <tr>
                             {columns.map((column) => (
-                                <th key={column.key} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
+                                <th key={column.key} className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-600 ${column.className ?? ""}`}>
                                     {column.title}
                                 </th>
                             ))}
@@ -43,7 +44,7 @@ export function DataTable<T>({ columns, rows, emptyText = "No data", onRowClick 
                                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                                 >
                                     {columns.map((column) => (
-                                        <td key={column.key} className="px-4 py-3 align-top text-slate-700">
+                                        <td key={column.key} className={`px-4 py-3 align-top text-slate-700 ${column.className ?? ""}`}>
                                             {column.render(row)}
                                         </td>
                                     ))}

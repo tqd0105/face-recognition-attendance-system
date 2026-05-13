@@ -38,8 +38,8 @@ async function seedData() {
         const teacherQuery = `
             INSERT INTO Teacher (teacher_code, teacher_name, email, password_hash, role, status)
             VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (email) DO UPDATE
-            SET teacher_code = EXCLUDED.teacher_code,
+            ON CONFLICT (teacher_code) DO UPDATE
+            SET email = EXCLUDED.email,
                 teacher_name = EXCLUDED.teacher_name,
                 password_hash = EXCLUDED.password_hash,
                 role = EXCLUDED.role,
