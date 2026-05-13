@@ -36,6 +36,7 @@ const navItems: NavItem[] = [
     { href: "/enrollment", label: "Face Enrollment", icon: Camera, roles: ["teacher", "admin"] as const },
     { href: "/attendance", label: "Realtime Attendance", icon: ClipboardList, roles: ["teacher", "admin"] as const },
     { href: "/students", label: "Student Management", icon: Users, roles: ["teacher", "admin"] as const },
+    { href: "/teachers", label: "Teacher Management", icon: UserRound, roles: ["admin"] as const },
     { href: "/classes", label: "Home Class Management", icon: School, roles: ["teacher", "admin"] as const },
     { href: "/courses", label: "Course Class Management", icon: BookOpen, roles: ["teacher", "admin"] as const },
     { href: "/sessions", label: "Session Management", icon: CalendarClock, roles: ["teacher", "admin"] as const },

@@ -121,14 +121,19 @@ function toApiMessage(error: unknown): string | null {
     return null;
   }
 
-  const data = error.response?.data as { message?: string; error?: string; detail?: string | { message?: string } } | undefined;
-  if (typeof data?.detail === "string") {
-    return data.detail;
+  const data = error.response?.data;
+  if (typeof data === "string") {
+    return data;
   }
-  if (data?.detail && typeof data.detail === "object" && typeof data.detail.message === "string") {
-    return data.detail.message;
+
+  const dataObj = data as { message?: string; error?: string; detail?: string | { message?: string } } | undefined;
+  if (typeof dataObj?.detail === "string") {
+    return dataObj.detail;
   }
-  return data?.message ?? data?.error ?? null;
+  if (dataObj?.detail && typeof dataObj.detail === "object" && typeof dataObj.detail.message === "string") {
+    return dataObj.detail.message;
+  }
+  return dataObj?.message ?? dataObj?.error ?? null;
 }
 
 function rethrowFriendlyError(error: unknown, fallback: string): never {

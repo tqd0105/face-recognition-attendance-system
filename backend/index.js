@@ -13,7 +13,7 @@ const sessionRoutes = require('./routes/sessionRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const biometricRoutes = require('./routes/biometricRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-
+const teacherRoutes = require('./routes/teacherRoutes');
 const app = express();
 
 // Middleware
@@ -73,6 +73,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/biometrics', biometricRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/teachers', teacherRoutes);
 
 function resolveAiConfig() {
   return {
