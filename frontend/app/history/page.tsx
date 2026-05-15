@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardList, Clock3, CircleCheckBig } from "lucide-react";
+import { ClipboardList, Clock3, CircleCheckBig, Search, RotateCcw, Filter } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { attendanceService } from "@/services/attendance.service";
 import { courseService } from "@/services/course.service";
@@ -10,9 +10,27 @@ import type { AttendanceItem, StudentAttendanceHistoryItem } from "@/types/model
 import { HistoryIcons } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
 
+type HistoryFilters = {
+    keyword: string;
+    classQuery: string;
+    fromDate: string;
+    toDate: string;
+    status: "all" | "present" | "late" | "absent" | "excused";
+};
+
+const initialFilters: HistoryFilters = {
+    keyword: "",
+    classQuery: "",
+    fromDate: "",
+    toDate: "",
+    status: "all",
+};
+
 export default function HistoryPage() {
     const { user } = useAuth();
     const [history, setHistory] = useState<AttendanceItem[]>(() => attendanceService.getLocal());
+    const [draftFilters, setDraftFilters] = useState<HistoryFilters>(initialFilters);
+    const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(initialFilters);
 
     const formatSessionLabel = (row: Pick<AttendanceItem, "course_code" | "course_name" | "session_name" | "session_id" | "session_date" | "session_start_time" | "session_end_time">) => {
         const courseLabel = row.course_code
@@ -22,6 +40,158 @@ export default function HistoryPage() {
             || (row.session_date ? `${row.session_date}${row.session_start_time ? ` ${row.session_start_time}` : ""}${row.session_end_time ? `-${row.session_end_time}` : ""}` : "Session");
         return `${courseLabel} | ${sessionLabel}`;
     };
+
+    function formatHistoryDateTime(value?: string): string {
+        if (!value) {
+            return "-";
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+
+        return new Intl.DateTimeFormat("en-GB", {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+            timeZone: "Asia/Ho_Chi_Minh",
+            timeZoneName: "short",
+        }).format(parsed);
+    }
+
+    function formatHistoryDate(value?: string): string {
+        if (!value) {
+            return "-";
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+
+        return new Intl.DateTimeFormat("en-GB", {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            timeZone: "Asia/Ho_Chi_Minh",
+        }).format(parsed);
+    }
+
+    function formatTime(value?: string): string {
+        if (!value) {
+            return "--:--";
+        }
+
+        const raw = String(value).trim();
+        const match = raw.match(/^(\d{2}:\d{2})/);
+        if (match) {
+            return match[1];
+        }
+
+        const parsed = new Date(raw);
+        if (Number.isNaN(parsed.getTime())) {
+            return raw.slice(0, 5);
+        }
+
+        return new Intl.DateTimeFormat("en-GB", {
+            timeZone: "Asia/Ho_Chi_Minh",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        }).format(parsed);
+    }
+
+    function normalizeText(value?: string): string {
+        return String(value || "").trim().toLowerCase();
+    }
+
+    function getRecordTime(row: AttendanceItem): number {
+        const parsed = new Date(row.check_in_time ?? row.created_at).getTime();
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
+    const classSuggestions = useMemo(() => {
+        const items = history
+            .map((row) => [row.home_class_code, row.course_code, row.course_name, row.home_class_major, row.home_class_department]
+                .filter(Boolean)
+                .join(" • "))
+            .filter(Boolean);
+        return Array.from(new Set(items)).sort((a, b) => a.localeCompare(b));
+    }, [history]);
+
+    const filteredHistory = useMemo(() => {
+        const keyword = normalizeText(appliedFilters.keyword);
+        const classQuery = normalizeText(appliedFilters.classQuery);
+        const fromTs = appliedFilters.fromDate ? new Date(`${appliedFilters.fromDate}T00:00:00`).getTime() : null;
+        const toTs = appliedFilters.toDate ? new Date(`${appliedFilters.toDate}T23:59:59.999`).getTime() : null;
+
+        return history.filter((row) => {
+            const recordTime = getRecordTime(row);
+
+            if (fromTs !== null && !Number.isNaN(fromTs) && recordTime && recordTime < fromTs) {
+                return false;
+            }
+
+            if (toTs !== null && !Number.isNaN(toTs) && recordTime && recordTime > toTs) {
+                return false;
+            }
+
+            if (appliedFilters.status !== "all" && row.status !== appliedFilters.status) {
+                return false;
+            }
+
+            if (keyword) {
+                const searchable = [
+                    row.student_code,
+                    row.student_name,
+                    row.course_code,
+                    row.course_name,
+                    row.home_class_code,
+                    row.home_class_major,
+                    row.home_class_department,
+                    row.teacher_name,
+                    row.session_name,
+                    row.session_date,
+                    row.session_start_time,
+                    row.session_end_time,
+                    row.session_status,
+                    row.status,
+                    formatSessionLabel(row),
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLowerCase();
+
+                if (!searchable.includes(keyword)) {
+                    return false;
+                }
+            }
+
+            if (classQuery) {
+                const classText = [
+                    row.home_class_code,
+                    row.course_code,
+                    row.course_name,
+                    row.home_class_major,
+                    row.home_class_department,
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLowerCase();
+
+                if (!classText.includes(classQuery)) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }, [appliedFilters, history]);
 
     useEffect(() => {
         async function loadHistory() {
@@ -88,7 +258,7 @@ export default function HistoryPage() {
             {
                 key: "time",
                 title: "Check-in Time",
-                render: (row: AttendanceItem) => new Date(row.check_in_time ?? row.created_at).toLocaleString(),
+                render: (row: AttendanceItem) => formatHistoryDateTime(row.check_in_time ?? row.created_at),
             },
         ];
 
@@ -121,9 +291,19 @@ export default function HistoryPage() {
         return baseColumns;
     }, [user.role]);
 
-    const totalRecords = history.length;
-    const presentCount = history.filter((item) => item.status === "present").length;
-    const lateCount = history.filter((item) => item.status === "late").length;
+    const totalRecords = filteredHistory.length;
+    const presentCount = filteredHistory.filter((item) => item.status === "present").length;
+    const lateCount = filteredHistory.filter((item) => item.status === "late").length;
+
+    function applyFilters(event?: React.FormEvent<HTMLFormElement>) {
+        event?.preventDefault();
+        setAppliedFilters({ ...draftFilters });
+    }
+
+    function resetFilters() {
+        setDraftFilters(initialFilters);
+        setAppliedFilters(initialFilters);
+    }
 
     return (
         <main className="motion-page space-y-4 px-1 py-1 sm:px-2">
@@ -153,12 +333,114 @@ export default function HistoryPage() {
                     </article>
                 </div>
 
+                <form className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm" onSubmit={applyFilters}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                <Filter className="h-4 w-4" /> Search & Filter
+                            </p>
+                            <p className="mt-1 text-sm text-slate-600">
+                                Search by time, class, student, teacher, session name, or status.
+                            </p>
+                        </div>
+                        <p className="text-xs font-semibold text-slate-500">
+                            Showing {filteredHistory.length} of {history.length} records
+                        </p>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div>
+                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600" htmlFor="history-keyword">Keyword</label>
+                            <input
+                                id="history-keyword"
+                                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                                value={draftFilters.keyword}
+                                onChange={(event) => setDraftFilters((prev) => ({ ...prev, keyword: event.target.value }))}
+                                placeholder="Student, teacher, session, status..."
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600" htmlFor="history-class">Class / Course</label>
+                            <input
+                                id="history-class"
+                                list="history-class-options"
+                                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                                value={draftFilters.classQuery}
+                                onChange={(event) => setDraftFilters((prev) => ({ ...prev, classQuery: event.target.value }))}
+                                placeholder="Class code, course code, or course name"
+                            />
+                            <datalist id="history-class-options">
+                                {classSuggestions.map((item) => (
+                                    <option key={item} value={item} />
+                                ))}
+                            </datalist>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600" htmlFor="history-from">From date</label>
+                            <input
+                                id="history-from"
+                                type="date"
+                                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                                value={draftFilters.fromDate}
+                                onChange={(event) => setDraftFilters((prev) => ({ ...prev, fromDate: event.target.value }))}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600" htmlFor="history-to">To date</label>
+                            <input
+                                id="history-to"
+                                type="date"
+                                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                                value={draftFilters.toDate}
+                                onChange={(event) => setDraftFilters((prev) => ({ ...prev, toDate: event.target.value }))}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-end gap-3">
+                        <div className="min-w-[180px] flex-1">
+                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600" htmlFor="history-status">Status</label>
+                            <select
+                                id="history-status"
+                                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                                value={draftFilters.status}
+                                onChange={(event) => setDraftFilters((prev) => ({ ...prev, status: event.target.value as HistoryFilters["status"] }))}
+                            >
+                                <option value="all">All status</option>
+                                <option value="present">Present</option>
+                                <option value="late">Late</option>
+                                <option value="absent">Absent</option>
+                                <option value="excused">Excused</option>
+                            </select>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                type="submit"
+                                className="interactive-btn inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                            >
+                                <Search className="h-4 w-4" /> Tra cứu
+                            </button>
+                            <button
+                                type="button"
+                                className="interactive-btn inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                onClick={resetFilters}
+                            >
+                                <RotateCcw className="h-4 w-4" /> Reset
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
                 <div className="mt-3">
                     <p className="ml-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Attendance Records</p>
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
-                    <DataTable columns={columns} rows={history} emptyText="No attendance records yet" />
+                    <DataTable columns={columns} rows={filteredHistory} emptyText="No attendance records match your filters" />
                 </div>
             </section>
         </main>
