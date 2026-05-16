@@ -39,14 +39,14 @@ export const courseService = {
     };
 
     try {
-      const { data } = await http.post<CourseCreateResponse>("/api/courses", normalizedPayload);
+      const { data } = await http.post<CourseCreateResponse>("/api/course-classes", normalizedPayload);
       if (data?.data) {
         return data.data;
       }
       throw new Error(data?.message || "Cannot create course");
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 404) {
-        const { data } = await http.post<CourseCreateResponse>("/api/course-classes", normalizedPayload);
+        const { data } = await http.post<CourseCreateResponse>("/api/courses", normalizedPayload);
         if (data?.data) {
           return data.data;
         }

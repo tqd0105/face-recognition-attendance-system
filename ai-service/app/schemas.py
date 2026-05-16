@@ -22,6 +22,10 @@ class RecognizeRequest(BaseModel):
     min_similarity: float = 0.6
 
 
+class LivenessRequest(BaseModel):
+    frames: list[str] = Field(default_factory=list)
+
+
 class RecognizeResult(BaseModel):
     student_id: str | None
     similarity: float

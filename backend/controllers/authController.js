@@ -2,13 +2,6 @@ const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const generateToken = require('../utils/jwtToken');
 
-function parseAdminEmails() {
-    return String(process.env.ADMIN_EMAILS || '')
-        .split(',')
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean);
-}
-
 function resolveRequestedRole(rawRole) {
     const normalized = String(rawRole || 'teacher').trim().toLowerCase();
     if (normalized === 'admin' || normalized === 'teacher' || normalized === 'student') {
@@ -94,17 +87,15 @@ exports.loginTeacher = async (req, res) => {
             return res.status(401).json({ message: 'Invalid email or password' });
         }
 
-        const adminEmails = parseAdminEmails();
-        const hasAdminPrivilege =
-            String(teacher.role || '').toLowerCase() === 'admin' ||
-            String(teacher.status || '').toLowerCase() === 'admin' ||
-            adminEmails.includes(String(teacher.email || '').toLowerCase());
+        const dbRole = String(teacher.role || 'teacher').toLowerCase();
 
-        if (requestedRole === 'admin' && !hasAdminPrivilege) {
-            return res.status(403).json({ message: 'Access denied: this account is not admin' });
+        if (requestedRole !== dbRole) {
+            return res.status(403).json({
+                message: `Access denied: this account must sign in as ${dbRole}`,
+            });
         }
 
-        const effectiveRole = requestedRole === 'admin' ? 'admin' : 'teacher';
+        const effectiveRole = dbRole;
 
         res.json({
             id: teacher.id,
@@ -218,7 +209,7 @@ exports.getMe = async (req, res) => {
         }
 
         const teacherResult = await pool.query(
-            `SELECT id, teacher_code, teacher_name, email, status
+            `SELECT id, teacher_code, teacher_name, email, role, status
              FROM Teacher
              WHERE id = $1`,
             [userId]
@@ -231,7 +222,7 @@ exports.getMe = async (req, res) => {
 
         return res.json({
             id: teacher.id,
-            role: role === 'admin' ? 'admin' : 'teacher',
+            role: String(teacher.role || role || 'teacher').toLowerCase() === 'admin' ? 'admin' : 'teacher',
             teacher_code: teacher.teacher_code,
             teacher_name: teacher.teacher_name,
             email: teacher.email,

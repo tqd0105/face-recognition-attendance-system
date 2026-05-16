@@ -39,17 +39,17 @@ export default function LoginPage() {
     }
 
     return (
-        <main className="motion-page relative min-h-screen overflow-hidden bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="motion-page flex  relative min-h-screen overflow-hidden bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
             <div className="pointer-events-none absolute -left-20 top-8 h-80 w-80 rounded-full bg-indigo-300/20 blur-3xl" />
             <div className="pointer-events-none absolute -right-20 bottom-8 h-80 w-80 rounded-full bg-cyan-300/20 blur-3xl" />
 
             <section className="relative m-auto grid justify-center items-center w-full max-w-5xl gap-4 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.55)] sm:p-7 lg:grid-cols-[1.1fr_1fr]">
                 <aside className="my-auto motion-hero rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-5 text-white shadow-lg sm:p-7">
-                    <p className="inline-flex items-center mx-auto gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]">
+                    {/* <p className="inline-flex items-center mx-auto gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]">
                         <Sparkles className="h-4 w-4" />
                         Secure Entry
-                    </p>
-                    <h1 className="mt-4 text-3xl font-bold leading-tight">Role-based Sign In</h1>
+                    </p> */}
+                    <h1 className="mt-2 text-3xl font-extrabold leading-tight">Role-based Sign In</h1>
                     <p className="mt-3 text-sm text-slate-100">
                         Sign in securely to access the dashboard, student management, classes, sessions, real-time attendance, and attendance history.
                     </p>
@@ -67,27 +67,27 @@ export default function LoginPage() {
                             </p>
                             <p className="mt-1 text-sm text-slate-100">Student sign-in with personal attendance history and profile security.</p>
                         </div>
-                        {/* <div className="interactive-card rounded-2xl border border-white/20 bg-white/10 p-4" data-role="admin">
+                        <div className="interactive-card rounded-2xl border border-white/20 bg-white/10 p-4" data-role="admin">
                             <p className="inline-flex items-center gap-2 text-sm font-semibold">
                                 <ShieldCheck className="h-4 w-4" /> Admin account
                             </p>
                             <p className="mt-1 text-sm text-slate-100">System-wide administration, user management, and system configuration.</p>
-                        </div> */}
+                        </div>
                     </div>
                 </aside>
 
-                <div className="m-auto motion-hero rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm sm:p-6 w-full">
-                    <p className="text-lg font-semibold uppercase tracking-[0.16em] text-slate-400">Authentication</p>
-                    <h2 className="mt-1 text-xl font-bold text-slate-900">Sign in to access the system</h2>
+                <div className="m-auto motion-hero rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm sm:py-8 w-full">
+                    <p className="text-xl font-extrabold uppercase tracking-[0.16em] text-blue-700">Authentication</p>
+                    <h2 className="mt-2 text-xl font-bold text-slate-600">Sign in to access the system</h2>
 
                     <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-800">Choose account mode</p>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-3 ">
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3 ">
                             <button
                                 type="button"
-                                className={`interactive-btn text-center rounded-xl border px-2 py-3 text-center text-sm font-semibold transition ${role === "teacher"
-                                    ? "border-blue-300 bg-yellow-400 text-blue-900 shadow"
-                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                className={`interactive-btn text-center rounded-xl border px-2 py-3 text-center text-sm font-extrabold transition ${role === "teacher"
+                                    ? "border-black bg-yellow-400 text-blue-900 shadow"
+                                    : "border-slate-100 bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                 onClick={() => setRole("teacher")}
                             >
@@ -95,9 +95,9 @@ export default function LoginPage() {
                             </button>
                             <button
                                 type="button"
-                                className={`interactive-btn rounded-xl text-center border px-2 py-3 text-center text-sm font-semibold transition ${role === "student"
-                                    ? "border-indigo-300 bg-yellow-400 text-indigo-900 shadow"
-                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                className={`interactive-btn rounded-xl text-center border px-2 py-3 text-center text-sm font-extrabold transition ${role === "student"
+                                    ? "border-black bg-yellow-400 text-indigo-900 shadow"
+                                    : "border-slate-100 bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                 onClick={() => setRole("student")}
                             >
@@ -105,9 +105,9 @@ export default function LoginPage() {
                             </button>
                             <button
                                 type="button"
-                                className={`interactive-btn rounded-xl text-center border px-2 py-3 text-center text-sm font-semibold transition ${role === "admin"
-                                    ? "border-indigo-300 bg-yellow-400 text-indigo-900 shadow"
-                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                className={`interactive-btn rounded-xl text-center border px-2 py-3 text-center text-sm font-extrabold transition ${role === "admin"
+                                    ? "border-black bg-yellow-400 text-indigo-900 shadow"
+                                    : "border-slate-100 bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                 onClick={() => setRole("admin")}
                             >

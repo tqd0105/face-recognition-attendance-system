@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 export default function StudentsPage() {
     const { user } = useAuth();
-    const canHardDelete = user.role === "admin";
+    const canPermanentDelete = user.role === "teacher" || user.role === "admin";
     const [students, setStudents] = useState<Student[]>([]);
     const [homeClasses, setHomeClasses] = useState<ClassItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -438,7 +438,7 @@ export default function StudentsPage() {
                                 >
                                     <RotateCcw className="h-3.5 w-3.5" />
                                 </button>
-                                {canHardDelete ? (
+                                {canPermanentDelete && (
                                     <button
                                         type="button"
                                         className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
@@ -448,7 +448,7 @@ export default function StudentsPage() {
                                     >
                                         <Trash2 className="h-3.5 w-3.5" />
                                     </button>
-                                ) : null}
+                                )}
                             </>
                         ) : (
                             <button
@@ -465,7 +465,7 @@ export default function StudentsPage() {
                 ),
             },
         ],
-        [attendanceByStudent, homeClassCodeMap, onDeleteStudent, onEditStudent, onHardDeleteStudent, onRestoreStudent, openFaceModal, canHardDelete],
+        [attendanceByStudent, homeClassCodeMap, onDeleteStudent, onEditStudent, onHardDeleteStudent, onRestoreStudent, openFaceModal, canPermanentDelete],
     );
 
     const totalStudents = students.length;
@@ -638,6 +638,9 @@ export default function StudentsPage() {
                         <Plus className="h-4 w-4" /> Add Student
                     </button>
                 </div>
+                <p className="pl-4 pt-2 text-xs text-gray-500">
+                    You can disable a student's account if the student doesn't meet your expectations and you can only delete a student once they have been disabled.
+                </p>
 
                 <div className="mt-4 md:rounded-2xl md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:shadow-sm">
                     {isLoading && <LoadingState label="Loading student table..." />}

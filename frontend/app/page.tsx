@@ -87,15 +87,15 @@ const cards: DashboardCard[] = [
         iconType: "image",
         icon: SessionIcons,
     },
-    {
-        title: "Attendance History",
-        description: "Access attendance history, session timelines, and attendance status.",
-        href: "/history",
-        cta: "View History",
-        badge: "Archive",
-        iconType: "image",
-        icon: HistoryIcons,
-    },
+    // {
+    //     title: "Attendance History",
+    //     description: "Access attendance history, session timelines, and attendance status.",
+    //     href: "/history",
+    //     cta: "View History",
+    //     badge: "Archive",
+    //     iconType: "image",
+    //     icon: HistoryIcons,
+    // },
 ];
 
 function BadgeIcon({ name }: { name: string }) {

@@ -15,6 +15,7 @@ router.route('/:id')
     .delete(deleteStudent);
 
 router.patch('/:id/restore', restoreStudent);
-router.delete('/:id/permanent', authorizeRoles('admin'), hardDeleteStudent);
+router.delete('/:id/permanent', hardDeleteStudent);
 
 module.exports = router;
+

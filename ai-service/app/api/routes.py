@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from app.core.config import settings
 from app.core.security import verify_service_token
-from app.schemas import LoadEmbeddingsRequest, RecognizeRequest, UnloadEmbeddingsRequest
+from app.schemas import LivenessRequest, LoadEmbeddingsRequest, RecognizeRequest, UnloadEmbeddingsRequest
 from app.services.face_engine import face_engine
 from app.services.session_cache import session_cache
 
@@ -92,6 +92,38 @@ async def recognize(payload: RecognizeRequest) -> dict:
         'success': True,
         'session_id': payload.session_id,
         'results': results,
+    }
+
+
+@router.post('/liveness')
+async def liveness(payload: LivenessRequest) -> dict:
+    try:
+        result = face_engine.analyze_liveness(
+            frame_base64_list=payload.frames,
+            min_frames=settings.ai_liveness_min_frames,
+            min_pose_change=settings.ai_liveness_min_pose_change,
+            min_quality=settings.ai_liveness_min_quality,
+            same_face_similarity=settings.ai_liveness_same_face_similarity,
+        )
+    except ValueError as exc:
+        error_code = str(exc)
+        status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        if error_code in {'INVALID_IMAGE', 'LIVENESS_FRAMES_REQUIRED'}:
+            status_code = status.HTTP_400_BAD_REQUEST
+        raise HTTPException(
+            status_code=status_code,
+            detail={'success': False, 'error_code': error_code, 'message': 'Invalid liveness frames'},
+        ) from exc
+
+    if not result.get('live'):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={'success': False, **result},
+        )
+
+    return {
+        'success': True,
+        **result,
     }
 
 

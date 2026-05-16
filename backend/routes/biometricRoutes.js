@@ -15,8 +15,8 @@ router.use(protect);
 router.use(authorizeRoles('teacher', 'admin'));
 router.get('/student/:student_id', checkEnrollment);
 router.get('/student/:student_id/history', getEnrollmentHistory);
-router.delete('/student/:student_id', authorizeRoles('admin'), deleteEnrollmentHistoryByStudent);
-router.delete('/enrollment/:enrollment_id', authorizeRoles('admin'), deleteEnrollmentById);
+router.delete('/student/:student_id', deleteEnrollmentHistoryByStudent);
+router.delete('/enrollment/:enrollment_id', deleteEnrollmentById);
 router.post('/enroll', upload.single('image'), enrollFace);
 
 module.exports = router;

@@ -89,6 +89,16 @@ export type Session = {
   session_name: string;
   start_time: string;
   end_time: string;
+  created_by?: number;
+  created_by_label?: string;
+  created_by_name?: string;
+  created_by_code?: string;
+  created_by_role?: "teacher" | "admin";
+  teacher_name?: string;
+  teacher_code?: string;
+  attendance_count?: number;
+  total_attendance_records?: number;
+  enrolled_count?: number;
 };
 
 export type CreateSessionPayload = {
@@ -129,6 +139,7 @@ export type AttendanceItem = {
   course_name?: string;
   teacher_id?: number;
   teacher_name?: string;
+  session_name?: string;
   session_date?: string;
   session_start_time?: string;
   session_end_time?: string;
@@ -137,13 +148,18 @@ export type AttendanceItem = {
 
 export type StudentAttendanceHistoryItem = {
   attendance_id: number;
+  session_id: number;
   status: string;
   check_in_time?: string;
+  confidence_score?: number;
+  session_name?: string;
   session_date?: string;
   start_time?: string;
   end_time?: string;
   course_name?: string;
   course_code?: string;
+  student_code?: string;
+  student_name?: string;
 };
 
 export type StudentDashboardSessionItem = {

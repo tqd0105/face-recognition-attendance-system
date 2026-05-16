@@ -31,15 +31,40 @@ exports.getSessions = async (req, res) => {
 	const { course_class_id } = req.query;
 
 	try {
-		let query = 'SELECT * FROM Session';
+		let query = `
+			SELECT 
+				s.*,
+				creator.teacher_name AS created_by_name,
+				creator.teacher_code AS created_by_code,
+				creator.role AS created_by_role,
+				class_teacher.teacher_name AS class_teacher_name,
+				class_teacher.teacher_code AS class_teacher_code,
+				class_teacher.role AS class_teacher_role,
+				CASE
+					WHEN creator.role = 'admin' THEN 'admin'
+					WHEN creator.teacher_code IS NOT NULL THEN creator.teacher_code
+					WHEN class_teacher.role = 'admin' THEN 'admin'
+					WHEN class_teacher.teacher_code IS NOT NULL THEN class_teacher.teacher_code
+					ELSE COALESCE(creator.teacher_name, class_teacher.teacher_name, 'Unknown')
+				END AS created_by_label,
+				COUNT(a.id) FILTER (WHERE a.status = 'present') AS attendance_count,
+				COUNT(a.id) AS total_attendance_records,
+				COUNT(DISTINCT e.student_id) AS enrolled_count
+			FROM Session s
+			LEFT JOIN Teacher creator ON s.created_by = creator.id
+			LEFT JOIN Course_classes cc ON s.course_class_id = cc.id
+			LEFT JOIN Teacher class_teacher ON cc.teacher_id = class_teacher.id
+			LEFT JOIN Attendance a ON a.session_id = s.id
+			LEFT JOIN Enrollments e ON e.course_class_id = s.course_class_id
+		`;
 		let values = [];
 
 		if (course_class_id) {
-			query += ' WHERE course_class_id = $1';
+			query += ' WHERE s.course_class_id = $1';
 			values.push(course_class_id);
 		}
 
-		query += ' ORDER BY session_date DESC, start_time DESC';
+		query += ' GROUP BY s.id, creator.id, class_teacher.id ORDER BY s.session_date DESC, s.start_time DESC';
 
 		const result = await pool.query(query, values);
 
@@ -61,9 +86,9 @@ exports.createSession = async (req, res) => {
 
 	try {
 		const newSession = await pool.query(
-			`INSERT INTO Session (course_class_id, session_name, session_date, start_time, end_time, status) 
-						VALUES ($1, $2, $3, $4, $5, COALESCE($6::session_status, 'scheduled'::session_status)) RETURNING *`,
-			[course_class_id, session_name || null, session_date, start_time, end_time, status]
+			`INSERT INTO Session (course_class_id, session_name, session_date, start_time, end_time, status, created_by) 
+						VALUES ($1, $2, $3, $4, $5, COALESCE($6::session_status, 'scheduled'::session_status), $7) RETURNING *`,
+			[course_class_id, session_name || null, session_date, start_time, end_time, status, req.user?.id ?? null]
 		);
 
 		res.status(201).json({
@@ -140,11 +165,6 @@ exports.startSession = async (req, res) => {
 
 		if (sessionCheck.rows[0].status === 'active') {
 			return res.status(400).json({ message: 'Session is already active.' });
-		}
-
-		const endDateTime = new Date(`${sessionCheck.rows[0].session_date}T${sessionCheck.rows[0].end_time}`);
-		if (!Number.isNaN(endDateTime.getTime()) && endDateTime.getTime() <= Date.now()) {
-			return res.status(400).json({ message: 'This session has already passed its end time.' });
 		}
 
 		const courseClassId = sessionCheck.rows[0].course_class_id;

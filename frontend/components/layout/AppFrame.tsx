@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SidebarShell } from "@/components/layout/SidebarShell";
 import { LoadingState } from "@/components/ui/States";
@@ -11,24 +11,33 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const { user, isHydrated } = useAuth();
     const isPublic = pathname === "/login";
+    const isRedirecting = useRef(false);
 
     useEffect(() => {
         if (!isHydrated || isPublic) {
+            isRedirecting.current = false;
+            return;
+        }
+
+        if (isRedirecting.current) {
             return;
         }
 
         if (!user.token) {
+            isRedirecting.current = true;
             router.replace("/login");
             return;
         }
 
         const studentOnlyAllowed = ["/", "/history"];
         if (user.role === "student" && !studentOnlyAllowed.includes(pathname)) {
+            isRedirecting.current = true;
             router.replace("/history");
             return;
         }
 
         if (user.role !== "admin" && pathname === "/admin") {
+            isRedirecting.current = true;
             router.replace("/");
         }
     }, [isHydrated, isPublic, user.token, user.role, pathname, router]);

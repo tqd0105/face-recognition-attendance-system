@@ -61,6 +61,16 @@ function normalizeSession(data: SessionApiResponse): Session {
     session_name: data.session_name ?? data.session_title ?? "Session",
     start_time: startTime,
     end_time: endTime,
+    created_by: data.created_by ? Number(data.created_by) : undefined,
+    created_by_label: data.created_by_label,
+    created_by_name: data.created_by_name,
+    created_by_code: data.created_by_code,
+    created_by_role: data.created_by_role,
+    teacher_name: data.teacher_name,
+    teacher_code: data.teacher_code,
+    attendance_count: data.attendance_count ? Number(data.attendance_count) : undefined,
+    total_attendance_records: data.total_attendance_records ? Number(data.total_attendance_records) : undefined,
+    enrolled_count: data.enrolled_count ? Number(data.enrolled_count) : undefined,
   };
 }
 
