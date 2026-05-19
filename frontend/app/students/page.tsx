@@ -53,6 +53,7 @@ export default function StudentsPage() {
         student_code: "",
         name: "",
         email: "",
+        parent_email: "",
     });
 
     const loadStudents = useCallback(async () => {
@@ -190,7 +191,7 @@ export default function StudentsPage() {
             }
             setIsModalOpen(false);
             setEditingStudentId(null);
-            setForm({ student_code: "", name: "", email: "", home_class_id: undefined });
+            setForm({ student_code: "", name: "", email: "", parent_email: "", home_class_id: undefined });
             await loadStudents();
         } catch (err) {
             const message = err instanceof Error ? err.message : "Cannot create student";
@@ -253,6 +254,7 @@ export default function StudentsPage() {
             student_code: student.student_code ?? "",
             name: student.name,
             email: student.email ?? "",
+            parent_email: student.parent_email ?? "",
             home_class_id: student.home_class_id ?? student.class_id,
         });
         setIsModalOpen(true);
@@ -367,6 +369,7 @@ export default function StudentsPage() {
             { key: "code", title: "Student Code", render: (row: Student) => row.student_code ?? "-" },
             { key: "name", title: "Name", render: (row: Student) => row.name },
             { key: "email", title: "Email", render: (row: Student) => row.email ?? "-" },
+            { key: "parentEmail", title: "Parent Email", render: (row: Student) => row.parent_email ?? "-" },
             {
                 key: "homeClass",
                 title: "Home Class",
@@ -631,7 +634,7 @@ export default function StudentsPage() {
                         onClick={() => {
                             setModalError(null);
                             setEditingStudentId(null);
-                            setForm({ student_code: "", name: "", email: "", home_class_id: undefined });
+                            setForm({ student_code: "", name: "", email: "", parent_email: "", home_class_id: undefined });
                             setIsModalOpen(true);
                         }}
                     >
@@ -639,7 +642,7 @@ export default function StudentsPage() {
                     </button>
                 </div>
                 <p className="pl-4 pt-2 text-xs text-gray-500">
-                    You can disable a student's account if the student doesn't meet your expectations and you can only delete a student once they have been disabled.
+                    You can disable a student&apos;s account if the student doesn&apos;t meet your expectations and you can only delete a student once they have been disabled.
                 </p>
 
                 <div className="mt-4 md:rounded-2xl md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:shadow-sm">
@@ -865,6 +868,18 @@ export default function StudentsPage() {
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             value={form.email ?? ""}
                             onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+                        />
+                    </div>
+                    <div>
+                        <label className="text-sm font-semibold text-slate-700" htmlFor="student-parent-email">
+                            Parent Email
+                        </label>
+                        <input
+                            id="student-parent-email"
+                            type="email"
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                            value={form.parent_email ?? ""}
+                            onChange={(e) => setForm((prev) => ({ ...prev, parent_email: e.target.value }))}
                         />
                     </div>
                     <button

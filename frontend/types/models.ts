@@ -25,6 +25,7 @@ export type Student = {
   student_code?: string;
   name: string;
   email?: string;
+  parent_email?: string;
   home_class_id?: number;
   status?: string;
   // Legacy alias for older backend responses.
@@ -35,6 +36,7 @@ export type CreateStudentPayload = {
   student_code: string;
   name: string;
   email?: string;
+  parent_email?: string;
   home_class_id?: number;
   status?: string;
   // Legacy alias for older backend payloads.
@@ -177,6 +179,36 @@ export type StudentDashboardSessionItem = {
   attendance_status?: string;
   check_in_time?: string;
   display_status?: string;
+};
+
+export type NotificationLogItem = {
+  id: number;
+  notification_type: "schedule_reminder" | "late_attendance" | "absent_attendance" | string;
+  session_id?: number;
+  student_id?: number;
+  recipient_email: string;
+  recipient_role: "student" | "parent" | string;
+  subject: string;
+  status: "pending" | "sent" | "failed" | "skipped" | string;
+  error_message?: string | null;
+  sent_at?: string | null;
+  created_at?: string;
+  student_code?: string;
+  student_name?: string;
+  session_name?: string;
+  session_date?: string;
+  start_time?: string;
+  end_time?: string;
+  course_code?: string;
+  course_name?: string;
+  teacher_name?: string;
+};
+
+export type NotificationLogResponse = {
+  message?: string;
+  data: NotificationLogItem[];
+  page?: number;
+  limit?: number;
 };
 
 export type StudentDashboardSummary = {

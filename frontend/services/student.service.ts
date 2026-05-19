@@ -40,6 +40,7 @@ function normalizeStudent(data: StudentApiResponse): Student {
     student_code: data.student_code,
     name: data.name ?? "",
     email: data.email,
+    parent_email: data.parent_email,
     home_class_id: homeClassId,
     class_id: homeClassId,
     status: data.status,
@@ -57,6 +58,7 @@ export const studentService = {
       student_code: payload.student_code,
       name: payload.name,
       email: payload.email,
+      parent_email: payload.parent_email,
       home_class_id: payload.home_class_id ?? payload.class_id,
       status: payload.status,
     };
@@ -70,6 +72,7 @@ export const studentService = {
         student_code: payload.student_code,
         name: payload.name,
         email: payload.email,
+        parent_email: payload.parent_email,
         class_id: payload.home_class_id ?? payload.class_id,
         status: payload.status,
       };
@@ -84,6 +87,7 @@ export const studentService = {
       student_code: payload.student_code,
       name: payload.name,
       email: payload.email,
+      parent_email: payload.parent_email,
       home_class_id: payload.home_class_id ?? payload.class_id,
       status: payload.status,
     };

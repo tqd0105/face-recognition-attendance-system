@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS Student (
     student_code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
+    parent_email VARCHAR(100),
     password_hash VARCHAR(255),
     home_class_id INTEGER REFERENCES Home_class(id) ON DELETE SET NULL,
     status VARCHAR(20) DEFAULT 'active',
@@ -114,3 +115,27 @@ CREATE TABLE IF NOT EXISTS Attendance (
     confidence_score FLOAT,
     UNIQUE(session_id, student_id) 
 );
+
+CREATE TABLE IF NOT EXISTS Notification_log (
+    id SERIAL PRIMARY KEY,
+    notification_type VARCHAR(50) NOT NULL,
+    session_id INTEGER REFERENCES Session(id) ON DELETE CASCADE,
+    student_id INTEGER REFERENCES Student(id) ON DELETE CASCADE,
+    recipient_email VARCHAR(150) NOT NULL,
+    recipient_role VARCHAR(20) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    sent_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT notification_log_status_check CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+    CONSTRAINT notification_log_recipient_role_check CHECK (recipient_role IN ('student', 'parent'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_log_unique_delivery
+ON Notification_log(notification_type, session_id, student_id, recipient_email);
+
+CREATE INDEX IF NOT EXISTS idx_notification_log_session_id ON Notification_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_notification_log_student_id ON Notification_log(student_id);
+CREATE INDEX IF NOT EXISTS idx_notification_log_created_at ON Notification_log(created_at);

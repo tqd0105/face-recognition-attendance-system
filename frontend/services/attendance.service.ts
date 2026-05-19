@@ -4,6 +4,7 @@ import { sessionService } from "@/services/session.service";
 import type {
   AttendanceItem,
   AttendancePayload,
+  NotificationLogResponse,
   RealtimeRecognizeResponse,
   StudentAttendanceHistoryItem,
   StudentDashboardResponse,
@@ -262,6 +263,20 @@ export const attendanceService = {
   async getMyDashboard(range?: { from?: string; to?: string }): Promise<StudentDashboardResponse> {
     const { data } = await http.get<StudentDashboardResponse>("/api/attendance/me/dashboard", {
       params: range,
+    });
+    return data;
+  },
+
+  async getNotificationHistory(params?: { page?: number; limit?: number; type?: string; status?: string }): Promise<NotificationLogResponse> {
+    const { data } = await http.get<NotificationLogResponse>("/api/notifications", {
+      params: {
+        ...params,
+        _t: Date.now(),
+      },
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
     });
     return data;
   },

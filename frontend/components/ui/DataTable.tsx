@@ -19,7 +19,7 @@ export function DataTable<T>({ columns, rows, emptyText = "No data", onRowClick 
                 Swipe horizontally to view full table
             </div>
             <div className="overflow-x-auto">
-                <table className="min-w-[760px] w-full divide-y divide-slate-200 text-sm">
+                <table className="min-w-[760px] w-full divide-y divide-slate-200 text-sm text-nowrap">
                     <thead className="bg-slate-50">
                         <tr>
                             {columns.map((column) => (

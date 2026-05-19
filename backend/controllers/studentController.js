@@ -39,7 +39,7 @@ exports.getStudents = async (req, res) => {
 // @route   POST /api/students
 // @access  Private
 exports.createStudent = async (req, res) => {
-    const { student_code, name, email, home_class_id } = req.body;
+    const { student_code, name, email, parent_email, home_class_id } = req.body;
 
     try {
         const checkExist = await pool.query(
@@ -54,9 +54,9 @@ exports.createStudent = async (req, res) => {
         const passwordHash = await bcrypt.hash(String(student_code), salt);
 
         const newStudent = await pool.query(
-            `INSERT INTO Student (student_code, name, email, home_class_id, password_hash) 
-            VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-            [student_code, name, email, home_class_id, passwordHash]
+            `INSERT INTO Student (student_code, name, email, parent_email, home_class_id, password_hash) 
+            VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [student_code, name, email, parent_email || null, home_class_id, passwordHash]
         );
 
         res.status(201).json({
@@ -74,7 +74,7 @@ exports.createStudent = async (req, res) => {
 // @access  Private
 exports.updateStudent = async (req, res) => {
     const { id } = req.params;
-    const { student_code, name, email, home_class_id, status } = req.body;
+    const { student_code, name, email, parent_email, home_class_id, status } = req.body;
 
     try {
         const checkExist = await pool.query(
@@ -88,9 +88,9 @@ exports.updateStudent = async (req, res) => {
 
         const updatedStudent = await pool.query(
             `UPDATE Student 
-             SET student_code = $1, name = $2, email = $3, home_class_id = $4, status = $5, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $6 RETURNING *`,
-            [student_code, name, email, home_class_id, status || 'active', id]
+             SET student_code = $1, name = $2, email = $3, parent_email = $4, home_class_id = $5, status = $6, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $7 RETURNING *`,
+            [student_code, name, email, parent_email || null, home_class_id, status || 'active', id]
         );
 
         if (updatedStudent.rows.length === 0) {

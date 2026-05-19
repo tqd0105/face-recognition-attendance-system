@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const axios = require('axios');
 const { verifyLivenessPayload } = require('../utils/liveness');
+const { notifyLateAttendance } = require('../services/notificationService');
 
 function isPrivilegedRole(role) {
     const normalized = String(role || '').toLowerCase();
@@ -37,10 +38,18 @@ function toNumeric(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function calculateAttendanceStatus(endDatetimeValue) {
-    const endDatetime = new Date(endDatetimeValue);
+function calculateAttendanceStatus(startDatetimeValue) {
+    const startDatetime = new Date(startDatetimeValue);
     const now = new Date();
-    return now > endDatetime ? 'late' : 'present';
+    const lateAfterMinutes = Math.max(0, Math.floor(toNumeric(process.env.ATTENDANCE_LATE_AFTER_MINUTES, 15)));
+    const lateThreshold = new Date(startDatetime.getTime() + lateAfterMinutes * 60 * 1000);
+    return now > lateThreshold ? 'late' : 'present';
+}
+
+function notifyLateAttendanceInBackground(sessionId, studentId) {
+    notifyLateAttendance(sessionId, studentId).catch((error) => {
+        console.error('Late attendance notification error:', error?.message || error);
+    });
 }
 
 function rejectInvalidLiveness(req, res) {
@@ -148,7 +157,7 @@ exports.checkIn = async (req, res) => {
         }
 
         const sessionCheck = await pool.query(
-            `SELECT status, (session_date + end_time) AS end_datetime
+            `SELECT status, (session_date + start_time) AS start_datetime
             FROM Session WHERE id = $1`,
             [session_id]
         );
@@ -159,7 +168,7 @@ exports.checkIn = async (req, res) => {
             return res.status(400).json({ message: 'Session is not active (not started or already ended)!' });
         }
 
-        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].end_datetime);
+        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].start_datetime);
 
         // Keep the first check-in timestamp. If scanned again, only improve confidence.
         const result = await pool.query(
@@ -172,6 +181,9 @@ exports.checkIn = async (req, res) => {
             [session_id, student_id, calculatedStatus, confidence]
         );
         const inserted = Boolean(result.rows[0]?.inserted);
+        if (inserted && calculatedStatus === 'late') {
+            notifyLateAttendanceInBackground(session_id, student_id);
+        }
         res.status(200).json({
             message: inserted
                 ? (calculatedStatus === 'late' ? 'Recorded: Late attendance!' : 'Recorded: Present attendance!')
@@ -196,7 +208,7 @@ exports.recognizeRealtime = async (req, res) => {
         }
 
         const sessionCheck = await pool.query(
-            `SELECT id, status, (session_date + end_time) AS end_datetime
+            `SELECT id, status, (session_date + start_time) AS start_datetime
              FROM Session WHERE id = $1`,
             [session_id]
         );
@@ -206,7 +218,7 @@ exports.recognizeRealtime = async (req, res) => {
         if (sessionCheck.rows[0].status !== 'active') {
             return res.status(400).json({ message: 'Session is not active. Please start the session before realtime scanning.' });
         }
-        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].end_datetime);
+        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].start_datetime);
 
         const liveness = rejectInvalidLiveness(req, res);
         if (!liveness) {
@@ -379,6 +391,9 @@ exports.recognizeRealtime = async (req, res) => {
 
             if (inserted) {
                 checkedIn.push(attendanceRow);
+                if (calculatedStatus === 'late') {
+                    notifyLateAttendanceInBackground(session_id, studentId);
+                }
             }
 
             detections.push({
@@ -431,7 +446,7 @@ exports.checkInOneFace = async (req, res) => {
         }
 
         const sessionCheck = await pool.query(
-            `SELECT status, (session_date + end_time) AS end_datetime FROM Session WHERE id = $1`,
+            `SELECT status, (session_date + start_time) AS start_datetime FROM Session WHERE id = $1`,
             [session_id]
         );
         if (sessionCheck.rows.length === 0) {
@@ -529,7 +544,7 @@ exports.checkInOneFace = async (req, res) => {
             return res.status(422).json({ message: `Face is too small in frame (${faceAreaRatio.toFixed(3)} < ${minFaceAreaRatio.toFixed(3)}).` });
         }
 
-        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].end_datetime);
+        const calculatedStatus = calculateAttendanceStatus(sessionCheck.rows[0].start_datetime);
 
         const attendance = await pool.query(
             `INSERT INTO Attendance (session_id, student_id, status, confidence_score)
@@ -542,6 +557,9 @@ exports.checkInOneFace = async (req, res) => {
         );
 
         const inserted = Boolean(attendance.rows[0]?.inserted);
+        if (inserted && calculatedStatus === 'late') {
+            notifyLateAttendanceInBackground(session_id, student_id);
+        }
 
         return res.status(200).json({
             message: inserted
@@ -639,7 +657,13 @@ exports.updateAttendanceStatus = async (req, res) => {
                 VALUES ($1, $2, $3) RETURNING *`,
                 [session_id, student_id, new_status]
             )
+            if (String(new_status || '').toLowerCase() === 'late') {
+                notifyLateAttendanceInBackground(session_id, student_id);
+            }
             return res.status(200).json({ message: 'Attendance status updated!', data: insertResult.rows[0] });
+        }
+        if (String(new_status || '').toLowerCase() === 'late') {
+            notifyLateAttendanceInBackground(session_id, student_id);
         }
         res.status(200).json({ message: 'Attendance status updated!', data: result.rows[0] });
     } catch (error) {
@@ -987,6 +1011,9 @@ exports.manualCheckIn = async (req, res) => {
              RETURNING *`,
             [session_id, student_id, status]
         );
+        if (String(status || '').toLowerCase() === 'late') {
+            notifyLateAttendanceInBackground(session_id, student_id);
+        }
         res.status(200).json({
             message: 'Manual attendance updated successfully!',
             data: result.rows[0]
@@ -1019,6 +1046,10 @@ exports.updateAttendanceById = async (req, res) => {
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: 'Attendance record not found!' });
+        }
+
+        if (String(status || '').toLowerCase() === 'late') {
+            notifyLateAttendanceInBackground(result.rows[0].session_id, result.rows[0].student_id);
         }
 
         res.status(200).json({

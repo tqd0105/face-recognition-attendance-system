@@ -14,6 +14,8 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 const biometricRoutes = require('./routes/biometricRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const { markAbsencesAndNotify, notifyScheduleReminders } = require('./services/notificationService');
 const app = express();
 
 // Middleware
@@ -26,7 +28,7 @@ app.use('/api/auth', authRoutes);
 
 // API Test thử
 app.get('/', (req, res) => {
-  res.send('Face Recognition Backend is running! 🚀');
+  res.send('Face Recognition Backend is running! ');
 });
 
 app.get('/api/health/services', async (req, res) => {
@@ -74,6 +76,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/biometrics', biometricRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/teachers', teacherRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 function resolveAiConfig() {
   return {
@@ -91,6 +94,12 @@ function resolveSessionLifecycleConfig() {
   return {
     intervalMs: toNumber(process.env.SESSION_LIFECYCLE_INTERVAL_MS, 15000),
     timezone: String(process.env.SESSION_TIMEZONE || 'Asia/Ho_Chi_Minh').trim() || 'Asia/Ho_Chi_Minh',
+  };
+}
+
+function resolveNotificationJobConfig() {
+  return {
+    intervalMs: toNumber(process.env.NOTIFICATION_JOB_INTERVAL_MS, 60000),
   };
 }
 
@@ -137,9 +146,9 @@ async function loadSessionEmbeddingsForAutoStart(sessionId, courseClassId) {
     if (Number.isFinite(homeClassId) && homeClassId > 0) {
       await db.query(
         `INSERT INTO Enrollments (student_id, course_class_id)
-         SELECT s.id, $1
+         SELECT s.id, $1::int
          FROM Student s
-         WHERE s.home_class_id = $2
+         WHERE s.home_class_id = $2::int
            AND EXISTS (
              SELECT 1
              FROM Face_embeddings f
@@ -249,6 +258,65 @@ async function bootstrapSessionSchema() {
   }
 }
 
+async function bootstrapNotificationSchema() {
+  try {
+    await db.query('ALTER TABLE Student ADD COLUMN IF NOT EXISTS parent_email VARCHAR(100)');
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS Notification_log (
+        id SERIAL PRIMARY KEY,
+        notification_type VARCHAR(50) NOT NULL,
+        session_id INTEGER REFERENCES Session(id) ON DELETE CASCADE,
+        student_id INTEGER REFERENCES Student(id) ON DELETE CASCADE,
+        recipient_email VARCHAR(150) NOT NULL,
+        recipient_role VARCHAR(20) NOT NULL,
+        subject VARCHAR(255) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        error_message TEXT,
+        sent_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_log_unique_delivery
+      ON Notification_log(notification_type, session_id, student_id, recipient_email)
+    `);
+    await db.query('CREATE INDEX IF NOT EXISTS idx_notification_log_session_id ON Notification_log(session_id)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_notification_log_student_id ON Notification_log(student_id)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_notification_log_created_at ON Notification_log(created_at)');
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'notification_log_status_check'
+            AND conrelid = 'notification_log'::regclass
+        ) THEN
+          ALTER TABLE Notification_log
+          ADD CONSTRAINT notification_log_status_check CHECK (status IN ('pending', 'sent', 'failed', 'skipped'));
+        END IF;
+      END $$;
+    `);
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'notification_log_recipient_role_check'
+            AND conrelid = 'notification_log'::regclass
+        ) THEN
+          ALTER TABLE Notification_log
+          ADD CONSTRAINT notification_log_recipient_role_check CHECK (recipient_role IN ('student', 'parent'));
+        END IF;
+      END $$;
+    `);
+  } catch (error) {
+    console.error('Notification schema bootstrap error:', error.message);
+  }
+}
+
 async function runSessionLifecycleJob() {
   if (isSessionLifecycleJobRunning) {
     return;
@@ -342,6 +410,8 @@ async function runSessionLifecycleJob() {
       ...overdueScheduled.rows.map((row) => Number(row.id)),
     ].filter((id) => Number.isFinite(id) && id > 0);
 
+    await markAbsencesAndNotify(endedActive.rows.map((row) => Number(row.id)));
+
     if (sessionIdsToUnload.length > 0) {
       const { aiServiceUrl, aiServiceToken } = resolveAiConfig();
       await Promise.all(
@@ -355,9 +425,33 @@ async function runSessionLifecycleJob() {
       );
     }
   } catch (error) {
-    console.error('Session lifecycle job error:', error.message);
+    console.error('Session lifecycle job error:', error?.message || error);
+    if (error?.detail || error?.where || error?.routine) {
+      console.error('Session lifecycle job error detail:', {
+        detail: error.detail,
+        where: error.where,
+        routine: error.routine,
+      });
+    }
   } finally {
     isSessionLifecycleJobRunning = false;
+  }
+}
+
+let isNotificationJobRunning = false;
+
+async function runNotificationJob() {
+  if (isNotificationJobRunning) {
+    return;
+  }
+
+  isNotificationJobRunning = true;
+  try {
+    await notifyScheduleReminders();
+  } catch (error) {
+    console.error('Notification job error:', error.message);
+  } finally {
+    isNotificationJobRunning = false;
   }
 }
 
@@ -367,8 +461,16 @@ app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
 
-void bootstrapStudentCredentials();
-void bootstrapTeacherRoleSchema();
-void bootstrapSessionSchema();
-void runSessionLifecycleJob();
-setInterval(runSessionLifecycleJob, resolveSessionLifecycleConfig().intervalMs);
+async function bootstrapAndStartJobs() {
+  await bootstrapTeacherRoleSchema();
+  await bootstrapSessionSchema();
+  await bootstrapNotificationSchema();
+  await bootstrapStudentCredentials();
+
+  await runSessionLifecycleJob();
+  await runNotificationJob();
+  setInterval(runSessionLifecycleJob, resolveSessionLifecycleConfig().intervalMs);
+  setInterval(runNotificationJob, resolveNotificationJobConfig().intervalMs);
+}
+
+void bootstrapAndStartJobs();

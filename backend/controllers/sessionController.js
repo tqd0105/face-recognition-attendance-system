@@ -194,9 +194,9 @@ exports.startSession = async (req, res) => {
 			if (Number.isFinite(homeClassId) && homeClassId > 0) {
 				await pool.query(
 					`INSERT INTO Enrollments (student_id, course_class_id)
-					 SELECT s.id, $1
+					 SELECT s.id, $1::int
 					 FROM Student s
-					 WHERE s.home_class_id = $2
+					 WHERE s.home_class_id = $2::int
 					   AND EXISTS (
 						   SELECT 1
 						   FROM Face_embeddings f
