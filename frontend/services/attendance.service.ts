@@ -291,6 +291,7 @@ export const attendanceService = {
     image_base64: string;
     liveness_frames?: string[];
     min_similarity?: number;
+    checked_student_ids?: number[];
   }): Promise<RealtimeRecognizeResponse> {
     try {
       const { data } = await runWithSessionReloadRetry(payload.session_id, () =>

@@ -689,6 +689,7 @@ export default function AttendancePage() {
                 image_base64: liveness.imageBase64,
                 liveness_frames: liveness.livenessFrames,
                 min_similarity: realtimeThreshold,
+                checked_student_ids: Array.from(checkedStudentIdsRef.current),
             });
 
             // Ignore in-flight results that return after user pressed Stop.

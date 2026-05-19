@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from app.core.config import settings
 from app.core.security import verify_service_token
-from app.schemas import LivenessRequest, LoadEmbeddingsRequest, RecognizeRequest, UnloadEmbeddingsRequest
+from app.schemas import LivenessRequest, LoadEmbeddingsRequest, RecognizeLiveRequest, RecognizeRequest, UnloadEmbeddingsRequest
 from app.services.face_engine import face_engine
 from app.services.session_cache import session_cache
 
@@ -86,11 +86,62 @@ async def recognize(payload: RecognizeRequest) -> dict:
         image_bytes=image_bytes,
         cached_embeddings=cached,
         min_similarity=min_similarity,
+        excluded_student_ids=set(payload.excluded_student_ids),
     )
 
     return {
         'success': True,
         'session_id': payload.session_id,
+        'results': results,
+    }
+
+
+@router.post('/recognize-live')
+async def recognize_live(payload: RecognizeLiveRequest) -> dict:
+    cached = session_cache.get(payload.session_id)
+    if cached is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                'success': False,
+                'error_code': 'SESSION_NOT_LOADED',
+                'message': 'Session embeddings are not loaded in AI memory',
+            },
+        )
+
+    min_similarity = payload.min_similarity or settings.ai_recognition_threshold
+    try:
+        liveness, results = face_engine.recognize_live_against_cache(
+            image_base64=payload.image_base64,
+            frame_base64_list=payload.frames,
+            cached_embeddings=cached,
+            min_similarity=min_similarity,
+            min_frames=settings.ai_liveness_min_frames,
+            min_pose_change=settings.ai_liveness_min_pose_change,
+            min_quality=settings.ai_liveness_min_quality,
+            same_face_similarity=settings.ai_liveness_same_face_similarity,
+            excluded_student_ids=set(payload.excluded_student_ids),
+        )
+    except ValueError as exc:
+        error_code = str(exc)
+        status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        if error_code in {'INVALID_IMAGE', 'LIVENESS_FRAMES_REQUIRED'}:
+            status_code = status.HTTP_400_BAD_REQUEST
+        raise HTTPException(
+            status_code=status_code,
+            detail={'success': False, 'error_code': error_code, 'message': 'Invalid liveness frames'},
+        ) from exc
+
+    if not liveness.get('live'):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={'success': False, **liveness},
+        )
+
+    return {
+        'success': True,
+        'session_id': payload.session_id,
+        'liveness': liveness,
         'results': results,
     }
 

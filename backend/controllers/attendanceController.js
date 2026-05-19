@@ -83,38 +83,108 @@ function readLivenessFrames(body) {
     return Array.isArray(frames) ? frames : [];
 }
 
-async function verifyAiLiveness(req, res, aiServiceUrl, aiServiceToken) {
-    const frames = readLivenessFrames(req.body);
-    try {
-        const response = await axios.post(
-            `${aiServiceUrl}/ai/liveness`,
-            { frames },
-            {
-                headers: {
-                    'X-Service-Token': aiServiceToken,
-                },
-            }
-        );
+function readCheckedStudentIds(body) {
+    const candidates = [
+        body?.checked_student_ids,
+        body?.checkedStudentIds,
+        body?.excluded_student_ids,
+        body?.excludedStudentIds,
+    ];
 
-        return response?.data ?? { live: true };
-    } catch (aiError) {
-        const statusCode = aiError?.response?.status;
-        const detail = aiError?.response?.data?.detail;
-        const detailCode = typeof detail?.error_code === 'string' ? detail.error_code : null;
-        const detailMessage = typeof detail?.message === 'string' ? detail.message : null;
-
-        if (statusCode && statusCode >= 400 && statusCode < 500) {
-            res.status(422).json({
-                message: detailMessage || 'Liveness verification failed. Please turn your head slightly and try again.',
-                error_code: detailCode || 'AI_LIVENESS_FAILED',
-                liveness: detail || null,
-            });
-            return null;
-        }
-
-        res.status(503).json({ message: 'AI Service is unavailable during liveness verification.' });
-        return null;
+    const values = candidates.find((value) => Array.isArray(value));
+    if (!Array.isArray(values)) {
+        return [];
     }
+
+    return values
+        .map((value) => Number(value))
+        .filter((id) => Number.isFinite(id) && id > 0);
+}
+
+async function recognizeFacesWithAi({
+    aiServiceUrl,
+    aiServiceToken,
+    sessionId,
+    imageBase64,
+    minSimilarity,
+    livenessFrames,
+    checkedStudentIds,
+}) {
+    const hasLiveFrames = Array.isArray(livenessFrames) && livenessFrames.length > 0;
+    const endpoint = hasLiveFrames ? '/ai/recognize-live' : '/ai/recognize';
+    const payload = {
+        session_id: String(sessionId),
+        image_base64: imageBase64,
+        min_similarity: minSimilarity,
+        top_k: 1,
+        excluded_student_ids: checkedStudentIds.map((id) => String(id)),
+    };
+
+    if (hasLiveFrames) {
+        payload.frames = livenessFrames;
+    }
+
+    return axios.post(
+        `${aiServiceUrl}${endpoint}`,
+        payload,
+        {
+            headers: {
+                'X-Service-Token': aiServiceToken,
+            },
+        }
+    );
+}
+
+function extractAiErrorResponse(aiError, fallbackMessage) {
+    const statusCode = aiError?.response?.status;
+    const detail = aiError?.response?.data?.detail;
+    const detailCode = typeof detail?.error_code === 'string' ? detail.error_code : null;
+    const detailMessage = typeof detail?.message === 'string' ? detail.message : null;
+    return {
+        statusCode,
+        detailCode,
+        detailMessage,
+        fallbackMessage: aiError?.response?.data?.message || aiError?.response?.data?.error || aiError?.message || fallbackMessage,
+    };
+}
+
+function handleAiRecognitionError(res, aiError, unavailableMessage) {
+    const { statusCode, detailCode, detailMessage } = extractAiErrorResponse(aiError, unavailableMessage);
+
+    if (statusCode === 404 && detailCode === 'SESSION_NOT_LOADED') {
+        return res.status(409).json({ message: 'Session embeddings are not loaded in AI. Please start the session again.' });
+    }
+
+    if (statusCode && statusCode >= 400 && statusCode < 500) {
+        return res.status(422).json({ message: detailMessage || 'Invalid frame for recognition.' });
+    }
+
+    return res.status(503).json({ message: unavailableMessage });
+}
+
+async function insertAttendanceBatch(sessionId, rows) {
+    if (!rows.length) {
+        return [];
+    }
+
+    const values = [];
+    const placeholders = rows.map((row, index) => {
+        const offset = index * 4;
+        values.push(sessionId, row.studentId, row.status, row.similarity);
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`;
+    });
+
+    const result = await pool.query(
+        `INSERT INTO Attendance (session_id, student_id, status, confidence_score)
+         VALUES ${placeholders.join(', ')}
+         ON CONFLICT (session_id, student_id)
+         DO UPDATE SET
+            confidence_score = GREATEST(Attendance.confidence_score, EXCLUDED.confidence_score)
+         RETURNING id, session_id, student_id, status, confidence_score, check_in_time, (xmax = 0) AS inserted`,
+        values
+    );
+
+    return result.rows;
 }
 
 // @desc    Nhận kết quả điểm danh (thường do hệ thống AI gọi)
@@ -229,45 +299,26 @@ exports.recognizeRealtime = async (req, res) => {
         const minFaceQuality = toNumeric(process.env.ATTENDANCE_MIN_FACE_QUALITY, 0.75);
         const minFaceAreaRatio = toNumeric(process.env.ATTENDANCE_MIN_FACE_AREA_RATIO, 0.03);
         const { aiServiceUrl, aiServiceToken } = resolveAiConfig();
-        const aiLiveness = await verifyAiLiveness(req, res, aiServiceUrl, aiServiceToken);
-        if (!aiLiveness) {
-            return;
-        }
+        const livenessFrames = readLivenessFrames(req.body);
+        const checkedStudentIds = readCheckedStudentIds(req.body);
 
         let aiResponse;
         try {
-            aiResponse = await axios.post(
-                `${aiServiceUrl}/ai/recognize`,
-                {
-                    session_id: String(session_id),
-                    image_base64,
-                    min_similarity: threshold,
-                    top_k: 1,
-                },
-                {
-                    headers: {
-                        'X-Service-Token': aiServiceToken,
-                    },
-                }
-            );
+            aiResponse = await recognizeFacesWithAi({
+                aiServiceUrl,
+                aiServiceToken,
+                sessionId: session_id,
+                imageBase64: image_base64,
+                minSimilarity: threshold,
+                livenessFrames,
+                checkedStudentIds,
+            });
         } catch (aiError) {
-            const statusCode = aiError?.response?.status;
-            const detail = aiError?.response?.data?.detail;
-            const detailCode = typeof detail?.error_code === 'string' ? detail.error_code : null;
-            const detailMessage = typeof detail?.message === 'string' ? detail.message : null;
-
-            if (statusCode === 404 && detailCode === 'SESSION_NOT_LOADED') {
-                return res.status(409).json({ message: 'Session embeddings are not loaded in AI. Please start the session again.' });
-            }
-
-            if (statusCode && statusCode >= 400 && statusCode < 500) {
-                return res.status(422).json({ message: detailMessage || 'Invalid frame for recognition.' });
-            }
-
-            return res.status(503).json({ message: 'AI Service is unavailable during realtime recognition.' });
+            return handleAiRecognitionError(res, aiError, 'AI Service is unavailable during realtime recognition.');
         }
 
         const aiResults = Array.isArray(aiResponse?.data?.results) ? aiResponse.data.results : [];
+        const aiLiveness = aiResponse?.data?.liveness ?? null;
 
         const matchedIds = Array.from(
             new Set(
@@ -293,7 +344,7 @@ exports.recognizeRealtime = async (req, res) => {
         }
 
         const detections = [];
-        const checkedIn = [];
+        const attendanceCandidates = [];
 
         for (const item of aiResults) {
             const similarity = toNumeric(item?.similarity, 0);
@@ -376,28 +427,8 @@ exports.recognizeRealtime = async (req, res) => {
                 continue;
             }
 
-            const attendance = await pool.query(
-                `INSERT INTO Attendance (session_id, student_id, status, confidence_score)
-                 VALUES ($1, $2, $3, $4)
-                 ON CONFLICT (session_id, student_id)
-                 DO UPDATE SET
-                    confidence_score = GREATEST(Attendance.confidence_score, EXCLUDED.confidence_score)
-                 RETURNING id, session_id, student_id, status, confidence_score, check_in_time, (xmax = 0) AS inserted`,
-                [session_id, studentId, calculatedStatus, similarity]
-            );
-
-            const attendanceRow = attendance.rows[0];
-            const inserted = Boolean(attendanceRow?.inserted);
-
-            if (inserted) {
-                checkedIn.push(attendanceRow);
-                if (calculatedStatus === 'late') {
-                    notifyLateAttendanceInBackground(session_id, studentId);
-                }
-            }
-
-            detections.push({
-                status: inserted ? 'matched' : 'rejected',
+            const detection = {
+                status: 'pending',
                 student_id: studentId,
                 student_code: studentInfo.student_code,
                 name: studentInfo.name,
@@ -405,10 +436,62 @@ exports.recognizeRealtime = async (req, res) => {
                 quality_score: qualityScore,
                 face_area_ratio: faceAreaRatio,
                 bbox,
-                reason: inserted
-                    ? (calculatedStatus === 'late' ? 'Check-in successful (late)' : 'Check-in successful')
-                    : `Already checked in (${new Date(attendanceRow.check_in_time).toLocaleTimeString('en-GB', { hour12: false })})`,
+                reason: 'Pending attendance write',
+            };
+            detections.push(detection);
+            attendanceCandidates.push({
+                studentId,
+                similarity,
+                status: calculatedStatus,
+                detection,
             });
+        }
+
+        const bestCandidateByStudentId = new Map();
+        const duplicateCandidates = [];
+        for (const candidate of attendanceCandidates) {
+            const existing = bestCandidateByStudentId.get(candidate.studentId);
+            if (!existing) {
+                bestCandidateByStudentId.set(candidate.studentId, candidate);
+                continue;
+            }
+
+            if (candidate.similarity > existing.similarity) {
+                duplicateCandidates.push(existing);
+                bestCandidateByStudentId.set(candidate.studentId, candidate);
+            } else {
+                duplicateCandidates.push(candidate);
+            }
+        }
+
+        duplicateCandidates.forEach((candidate) => {
+            candidate.detection.status = 'rejected';
+            candidate.detection.reason = 'Duplicate match for the same student in this frame.';
+        });
+
+        const uniqueAttendanceCandidates = Array.from(bestCandidateByStudentId.values());
+        const attendanceRows = await insertAttendanceBatch(session_id, uniqueAttendanceCandidates);
+        const attendanceByStudentId = new Map(
+            attendanceRows.map((row) => [Number(row.student_id), row])
+        );
+        const checkedIn = [];
+
+        for (const candidate of uniqueAttendanceCandidates) {
+            const attendanceRow = attendanceByStudentId.get(Number(candidate.studentId));
+            const inserted = Boolean(attendanceRow?.inserted);
+            if (inserted) {
+                checkedIn.push(attendanceRow);
+                if (calculatedStatus === 'late') {
+                    notifyLateAttendanceInBackground(session_id, candidate.studentId);
+                }
+            }
+
+            candidate.detection.status = inserted ? 'matched' : 'rejected';
+            candidate.detection.reason = inserted
+                ? (calculatedStatus === 'late' ? 'Check-in successful (late)' : 'Check-in successful')
+                : attendanceRow?.check_in_time
+                    ? `Already checked in (${new Date(attendanceRow.check_in_time).toLocaleTimeString('en-GB', { hour12: false })})`
+                    : 'Attendance write did not return a row.';
         }
 
         return res.status(200).json({
@@ -480,45 +563,25 @@ exports.checkInOneFace = async (req, res) => {
         const minFaceQuality = toNumeric(process.env.ATTENDANCE_MIN_FACE_QUALITY, 0.75);
         const minFaceAreaRatio = toNumeric(process.env.ATTENDANCE_MIN_FACE_AREA_RATIO, 0.03);
         const { aiServiceUrl, aiServiceToken } = resolveAiConfig();
-        const aiLiveness = await verifyAiLiveness(req, res, aiServiceUrl, aiServiceToken);
-        if (!aiLiveness) {
-            return;
-        }
+        const livenessFrames = readLivenessFrames(req.body);
 
         let aiResponse;
         try {
-            aiResponse = await axios.post(
-                `${aiServiceUrl}/ai/recognize`,
-                {
-                    session_id: String(session_id),
-                    image_base64,
-                    min_similarity: threshold,
-                    top_k: 1,
-                },
-                {
-                    headers: {
-                        'X-Service-Token': aiServiceToken,
-                    },
-                }
-            );
+            aiResponse = await recognizeFacesWithAi({
+                aiServiceUrl,
+                aiServiceToken,
+                sessionId: session_id,
+                imageBase64: image_base64,
+                minSimilarity: threshold,
+                livenessFrames,
+                checkedStudentIds: [],
+            });
         } catch (aiError) {
-            const statusCode = aiError?.response?.status;
-            const detail = aiError?.response?.data?.detail;
-            const detailCode = typeof detail?.error_code === 'string' ? detail.error_code : null;
-            const detailMessage = typeof detail?.message === 'string' ? detail.message : null;
-
-            if (statusCode === 404 && detailCode === 'SESSION_NOT_LOADED') {
-                return res.status(409).json({ message: 'Session embeddings are not loaded in AI. Please start the session again.' });
-            }
-
-            if (statusCode && statusCode >= 400 && statusCode < 500) {
-                return res.status(422).json({ message: detailMessage || 'Invalid frame for recognition.' });
-            }
-
-            return res.status(503).json({ message: 'AI Service is unavailable during one-face check-in.' });
+            return handleAiRecognitionError(res, aiError, 'AI Service is unavailable during one-face check-in.');
         }
 
         const results = Array.isArray(aiResponse?.data?.results) ? aiResponse.data.results : [];
+        const aiLiveness = aiResponse?.data?.liveness ?? null;
         if (results.length === 0) {
             return res.status(422).json({ message: 'No face detected in the frame.' });
         }

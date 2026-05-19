@@ -20,6 +20,11 @@ class RecognizeRequest(BaseModel):
     image_base64: str
     top_k: int = 1
     min_similarity: float = 0.6
+    excluded_student_ids: list[str] = Field(default_factory=list)
+
+
+class RecognizeLiveRequest(RecognizeRequest):
+    frames: list[str] = Field(default_factory=list)
 
 
 class LivenessRequest(BaseModel):

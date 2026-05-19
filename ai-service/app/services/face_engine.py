@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from insightface.app import FaceAnalysis
 
+from app.services.session_cache import CachedEmbeddings
+
 
 class FaceEngine:
     def __init__(self) -> None:
@@ -53,6 +55,14 @@ class FaceEngine:
         return max(faces, key=self._face_area)
 
     @staticmethod
+    def _normalized_embedding(face: Any) -> np.ndarray:
+        embedding = np.asarray(face.normed_embedding, dtype=np.float32)
+        norm = float(np.linalg.norm(embedding))
+        if not np.isfinite(norm) or norm <= 0.0:
+            return embedding
+        return embedding / norm
+
+    @staticmethod
     def _extract_pose_vector(face: Any) -> np.ndarray:
         landmarks = np.array(getattr(face, 'kps', []), dtype=float)
         if landmarks.shape[0] < 5 or landmarks.shape[1] < 2:
@@ -73,24 +83,26 @@ class FaceEngine:
 
         return np.array([yaw_proxy, pitch_proxy, mouth_eye_ratio], dtype=float)
 
-    def analyze_liveness(
+    def _analyze_liveness_frames(
         self,
         frame_base64_list: list[str],
         min_frames: int,
         min_pose_change: float,
         min_quality: float,
         same_face_similarity: float,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         if len(frame_base64_list) < min_frames:
             raise ValueError('LIVENESS_FRAMES_REQUIRED')
 
         app = self._ensure_model()
         pose_vectors: list[np.ndarray] = []
-        embeddings: list[list[float]] = []
+        embeddings: list[np.ndarray] = []
         quality_scores: list[float] = []
+        analyzed_frames: list[dict[str, Any]] = []
 
         for frame_base64 in frame_base64_list:
             image = self._decode_image_bytes(self.decode_base64_image(frame_base64))
+            image_height, image_width = image.shape[:2]
             faces = app.get(image)
             if not faces:
                 raise ValueError('NO_FACE_DETECTED')
@@ -101,11 +113,18 @@ class FaceEngine:
                 raise ValueError('LIVENESS_LOW_FACE_QUALITY')
 
             pose_vectors.append(self._extract_pose_vector(face))
-            embeddings.append(np.array(face.normed_embedding, dtype=float).tolist())
+            embeddings.append(self._normalized_embedding(face))
             quality_scores.append(quality_score)
+            analyzed_frames.append(
+                {
+                    'image_width': image_width,
+                    'image_height': image_height,
+                    'faces': faces,
+                }
+            )
 
         same_face_scores = [
-            self.cosine_similarity(embeddings[index - 1], embeddings[index])
+            float(np.dot(embeddings[index - 1], embeddings[index]))
             for index in range(1, len(embeddings))
         ]
         min_same_face_score = min(same_face_scores) if same_face_scores else 1.0
@@ -128,7 +147,7 @@ class FaceEngine:
                 'min_pose_change': min_pose_change,
                 'min_same_face_similarity': round(min_same_face_score, 4),
                 'quality_score': round(float(min(quality_scores)), 4),
-            }
+            }, analyzed_frames
 
         return {
             'live': True,
@@ -137,7 +156,24 @@ class FaceEngine:
             'min_pose_change': min_pose_change,
             'min_same_face_similarity': round(min_same_face_score, 4),
             'quality_score': round(float(min(quality_scores)), 4),
-        }
+        }, analyzed_frames
+
+    def analyze_liveness(
+        self,
+        frame_base64_list: list[str],
+        min_frames: int,
+        min_pose_change: float,
+        min_quality: float,
+        same_face_similarity: float,
+    ) -> dict[str, Any]:
+        result, _ = self._analyze_liveness_frames(
+            frame_base64_list=frame_base64_list,
+            min_frames=min_frames,
+            min_pose_change=min_pose_change,
+            min_quality=min_quality,
+            same_face_similarity=same_face_similarity,
+        )
+        return result
 
     def decode_base64_image(self, image_base64: str) -> bytes:
         if ',' in image_base64:
@@ -159,8 +195,9 @@ class FaceEngine:
     def recognize_against_cache(
         self,
         image_bytes: bytes,
-        cached_embeddings: dict[str, list[float]],
+        cached_embeddings: CachedEmbeddings,
         min_similarity: float,
+        excluded_student_ids: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         image = self._decode_image_bytes(image_bytes)
         image_height, image_width = image.shape[:2]
@@ -170,10 +207,54 @@ class FaceEngine:
         if not faces:
             return []
 
+        return self._recognize_faces_against_cache(
+            faces=faces,
+            image_width=image_width,
+            image_height=image_height,
+            cached_embeddings=cached_embeddings,
+            min_similarity=min_similarity,
+            excluded_student_ids=excluded_student_ids,
+        )
+
+    def _match_embedding(
+        self,
+        probe_embedding: np.ndarray,
+        cached_embeddings: CachedEmbeddings,
+        excluded_student_ids: set[str] | None = None,
+    ) -> tuple[str | None, float]:
+        if cached_embeddings.matrix.size == 0 or not cached_embeddings.student_ids:
+            return None, -1.0
+        if cached_embeddings.matrix.shape[1] != probe_embedding.shape[0]:
+            return None, -1.0
+
+        similarities = cached_embeddings.matrix @ probe_embedding.astype(np.float32, copy=False)
+        if similarities.size == 0:
+            return None, -1.0
+
+        best_index = int(np.argmax(similarities))
+        best_similarity = float(similarities[best_index])
+        if not np.isfinite(best_similarity):
+            return None, -1.0
+
+        best_student_id = cached_embeddings.student_ids[best_index]
+        if excluded_student_ids and best_student_id in excluded_student_ids:
+            return None, best_similarity
+
+        return best_student_id, best_similarity
+
+    def _recognize_faces_against_cache(
+        self,
+        faces: list[Any],
+        image_width: int,
+        image_height: int,
+        cached_embeddings: CachedEmbeddings,
+        min_similarity: float,
+        excluded_student_ids: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
 
         for face in faces:
-            probe_embedding = np.array(face.normed_embedding, dtype=float).tolist()
+            probe_embedding = self._normalized_embedding(face)
             bbox = [int(v) for v in face.bbox.tolist()]
             x1, y1, x2, y2 = bbox
             face_width = max(x2 - x1, 1)
@@ -181,14 +262,11 @@ class FaceEngine:
             face_area_ratio = float((face_width * face_height) / max(image_width * image_height, 1))
             quality_score = float(getattr(face, 'det_score', 0.0))
 
-            best_student_id: str | None = None
-            best_similarity = -1.0
-
-            for student_id, stored_embedding in cached_embeddings.items():
-                sim = self.cosine_similarity(probe_embedding, stored_embedding)
-                if sim > best_similarity:
-                    best_similarity = sim
-                    best_student_id = student_id
+            best_student_id, best_similarity = self._match_embedding(
+                probe_embedding=probe_embedding,
+                cached_embeddings=cached_embeddings,
+                excluded_student_ids=excluded_student_ids,
+            )
 
             if best_similarity >= min_similarity and best_student_id:
                 results.append(
@@ -214,6 +292,50 @@ class FaceEngine:
                 )
 
         return results
+
+    def recognize_live_against_cache(
+        self,
+        image_base64: str,
+        frame_base64_list: list[str],
+        cached_embeddings: CachedEmbeddings,
+        min_similarity: float,
+        min_frames: int,
+        min_pose_change: float,
+        min_quality: float,
+        same_face_similarity: float,
+        excluded_student_ids: set[str] | None = None,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        liveness, analyzed_frames = self._analyze_liveness_frames(
+            frame_base64_list=frame_base64_list,
+            min_frames=min_frames,
+            min_pose_change=min_pose_change,
+            min_quality=min_quality,
+            same_face_similarity=same_face_similarity,
+        )
+
+        if not liveness.get('live'):
+            return liveness, []
+
+        if analyzed_frames:
+            frame = analyzed_frames[-1]
+            results = self._recognize_faces_against_cache(
+                faces=frame['faces'],
+                image_width=frame['image_width'],
+                image_height=frame['image_height'],
+                cached_embeddings=cached_embeddings,
+                min_similarity=min_similarity,
+                excluded_student_ids=excluded_student_ids,
+            )
+            return liveness, results
+
+        image_bytes = self.decode_base64_image(image_base64)
+        results = self.recognize_against_cache(
+            image_bytes=image_bytes,
+            cached_embeddings=cached_embeddings,
+            min_similarity=min_similarity,
+            excluded_student_ids=excluded_student_ids,
+        )
+        return liveness, results
 
 
 face_engine = FaceEngine()
