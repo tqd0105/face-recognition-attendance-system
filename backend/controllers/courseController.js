@@ -116,6 +116,18 @@ exports.createCourseClass = async (req, res) => {
             if (classCheck.rows.length === 0) {
                 return res.status(400).json({ message: 'Selected home class does not exist!' });
             }
+
+            if (!isAdmin) {
+                const ownership = await pool.query(
+                    'SELECT 1 FROM Home_class_teachers WHERE home_class_id = $1 AND teacher_id = $2 LIMIT 1',
+                    [home_class_id, req.user.id]
+                );
+                if (ownership.rows.length === 0) {
+                    return res.status(403).json({
+                        message: 'Home Class không thuộc giảng viên này. Vui lòng chọn lớp hành chính được phân công.',
+                    });
+                }
+            }
         }
 
         const resolvedTeacherId = isAdmin && teacher_id ? teacher_id : req.user.id;
@@ -164,6 +176,18 @@ exports.updateCourseClass = async (req, res) => {
             const classCheck = await pool.query('SELECT id FROM Home_class WHERE id = $1', [home_class_id]);
             if (classCheck.rows.length === 0) {
                 return res.status(400).json({ message: 'Selected home class does not exist!' });
+            }
+
+            if (!isAdmin) {
+                const ownership = await pool.query(
+                    'SELECT 1 FROM Home_class_teachers WHERE home_class_id = $1 AND teacher_id = $2 LIMIT 1',
+                    [home_class_id, req.user.id]
+                );
+                if (ownership.rows.length === 0) {
+                    return res.status(403).json({
+                        message: 'Home Class không thuộc giảng viên này. Vui lòng chọn lớp hành chính được phân công.',
+                    });
+                }
             }
         }
 
