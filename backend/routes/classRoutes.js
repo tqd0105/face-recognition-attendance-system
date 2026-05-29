@@ -4,13 +4,10 @@ const { getClass, createClass, updateClass, deleteClass } = require('../controll
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 router.use(protect);
-router.use(authorizeRoles('teacher', 'admin'));
 
-router.route('/')
-    .get(getClass)
-    .post(createClass);
-
-router.put('/:id', updateClass);
-router.delete('/:id', deleteClass);
+router.get('/', authorizeRoles('teacher', 'admin'), getClass);
+router.post('/', authorizeRoles('admin'), createClass);
+router.put('/:id', authorizeRoles('admin'), updateClass);
+router.delete('/:id', authorizeRoles('admin'), deleteClass);
 
 module.exports = router;

@@ -13,7 +13,7 @@ const sessionRoutes = require('./routes/sessionRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const biometricRoutes = require('./routes/biometricRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-
+const teacherRoutes = require('./routes/teacherRoutes');
 const app = express();
 
 // Middleware
@@ -73,6 +73,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/biometrics', biometricRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/teachers', teacherRoutes);
 
 function resolveAiConfig() {
   return {
@@ -248,6 +249,24 @@ async function bootstrapSessionSchema() {
   }
 }
 
+async function bootstrapHomeClassTeacherSchema() {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS Home_class_teachers (
+        id SERIAL PRIMARY KEY,
+        home_class_id INTEGER REFERENCES Home_class(id) ON DELETE CASCADE,
+        teacher_id INTEGER REFERENCES Teacher(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(home_class_id, teacher_id)
+      )
+    `);
+    await db.query('CREATE INDEX IF NOT EXISTS idx_home_class_teachers_class_id ON Home_class_teachers(home_class_id)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_home_class_teachers_teacher_id ON Home_class_teachers(teacher_id)');
+  } catch (error) {
+    console.error('Home class teacher schema bootstrap error:', error?.message || error);
+  }
+}
+
 async function runSessionLifecycleJob() {
   if (isSessionLifecycleJobRunning) {
     return;
@@ -369,5 +388,6 @@ app.listen(PORT, () => {
 void bootstrapStudentCredentials();
 void bootstrapTeacherRoleSchema();
 void bootstrapSessionSchema();
+void bootstrapHomeClassTeacherSchema();
 void runSessionLifecycleJob();
 setInterval(runSessionLifecycleJob, resolveSessionLifecycleConfig().intervalMs);
