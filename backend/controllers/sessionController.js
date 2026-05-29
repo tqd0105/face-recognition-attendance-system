@@ -24,6 +24,10 @@ function parseEmbedding(rawEmbedding) {
 	return [];
 }
 
+function isAdminRole(role) {
+	return String(role || '').toLowerCase() === 'admin';
+}
+
 // @desc    Lấy danh sách các buổi học (Lọc theo course_class_id)
 // @route   GET /api/sessions
 // @access  Private
@@ -31,6 +35,7 @@ exports.getSessions = async (req, res) => {
 	const { course_class_id } = req.query;
 
 	try {
+		const isAdmin = isAdminRole(req.user?.role);
 		let query = `
 			SELECT 
 				s.*,
@@ -58,10 +63,20 @@ exports.getSessions = async (req, res) => {
 			LEFT JOIN Enrollments e ON e.course_class_id = s.course_class_id
 		`;
 		let values = [];
+		let conditions = [];
 
 		if (course_class_id) {
-			query += ' WHERE s.course_class_id = $1';
+			conditions.push(`s.course_class_id = $${values.length + 1}`);
 			values.push(course_class_id);
+		}
+
+		if (!isAdmin) {
+			conditions.push(`cc.teacher_id = $${values.length + 1}`);
+			values.push(req.user?.id);
+		}
+
+		if (conditions.length > 0) {
+			query += ` WHERE ${conditions.join(' AND ')}`;
 		}
 
 		query += ' GROUP BY s.id, creator.id, class_teacher.id ORDER BY s.session_date DESC, s.start_time DESC';
@@ -85,6 +100,18 @@ exports.createSession = async (req, res) => {
 	const { course_class_id, session_name, session_date, start_time, end_time, status } = req.body;
 
 	try {
+		const isAdmin = isAdminRole(req.user?.role);
+		const courseClass = await pool.query(
+			'SELECT id, teacher_id FROM Course_classes WHERE id = $1',
+			[course_class_id]
+		);
+		if (courseClass.rows.length === 0) {
+			return res.status(404).json({ message: 'Course class not found for session creation!' });
+		}
+		if (!isAdmin && Number(courseClass.rows[0].teacher_id) !== Number(req.user?.id)) {
+			return res.status(403).json({ message: 'Bạn chỉ được tạo buổi học cho lớp học phần của mình.' });
+		}
+
 		const newSession = await pool.query(
 			`INSERT INTO Session (course_class_id, session_name, session_date, start_time, end_time, status, created_by) 
 						VALUES ($1, $2, $3, $4, $5, COALESCE($6::session_status, 'scheduled'::session_status), $7) RETURNING *`,
@@ -112,9 +139,19 @@ exports.updateSession = async (req, res) => {
 	const { course_class_id, session_name, session_date, start_time, end_time, status } = req.body;
 
 	try {
-		const existing = await pool.query('SELECT id, status FROM Session WHERE id = $1', [id]);
+		const isAdmin = isAdminRole(req.user?.role);
+		const existing = await pool.query(
+			`SELECT s.id, s.status, s.course_class_id, cc.teacher_id
+			 FROM Session s
+			 JOIN Course_classes cc ON cc.id = s.course_class_id
+			 WHERE s.id = $1`,
+			[id]
+		);
 		if (existing.rows.length === 0) {
 			return res.status(404).json({ message: 'Session not found for update!' });
+		}
+		if (!isAdmin && Number(existing.rows[0].teacher_id) !== Number(req.user?.id)) {
+			return res.status(403).json({ message: 'Bạn chỉ được cập nhật buổi học của lớp mình.' });
 		}
 
 		const currentStatus = existing.rows[0]?.status;
@@ -124,6 +161,19 @@ exports.updateSession = async (req, res) => {
 
 		if (status && currentStatus === 'canceled' && status !== 'canceled') {
 			return res.status(400).json({ message: 'Canceled session cannot be changed to another status.' });
+		}
+
+		if (course_class_id && Number(course_class_id) !== Number(existing.rows[0].course_class_id)) {
+			const courseClass = await pool.query(
+				'SELECT id, teacher_id FROM Course_classes WHERE id = $1',
+				[course_class_id]
+			);
+			if (courseClass.rows.length === 0) {
+				return res.status(404).json({ message: 'Course class not found for update!' });
+			}
+			if (!isAdmin && Number(courseClass.rows[0].teacher_id) !== Number(req.user?.id)) {
+				return res.status(403).json({ message: 'Bạn chỉ được gán buổi học vào lớp mình phụ trách.' });
+			}
 		}
 
 		const updated = await pool.query(
@@ -158,9 +208,19 @@ exports.updateSession = async (req, res) => {
 exports.startSession = async (req, res) => {
 	const { id } = req.params;
 	try {
-		const sessionCheck = await pool.query('SELECT * FROM Session WHERE id = $1', [id]);
+		const isAdmin = isAdminRole(req.user?.role);
+		const sessionCheck = await pool.query(
+			`SELECT s.*, cc.teacher_id
+			 FROM Session s
+			 JOIN Course_classes cc ON cc.id = s.course_class_id
+			 WHERE s.id = $1`,
+			[id]
+		);
 		if (sessionCheck.rows.length === 0) {
 			return res.status(404).json({ message: 'Session not found!' });
+		}
+		if (!isAdmin && Number(sessionCheck.rows[0].teacher_id) !== Number(req.user?.id)) {
+			return res.status(403).json({ message: 'Bạn chỉ được bắt đầu buổi học của lớp mình.' });
 		}
 
 		if (sessionCheck.rows[0].status === 'active') {
@@ -256,6 +316,21 @@ exports.stopSession = async (req, res) => {
 	const { id } = req.params;
 
 	try {
+		const isAdmin = isAdminRole(req.user?.role);
+		const sessionCheck = await pool.query(
+			`SELECT s.id, cc.teacher_id
+			 FROM Session s
+			 JOIN Course_classes cc ON cc.id = s.course_class_id
+			 WHERE s.id = $1`,
+			[id]
+		);
+		if (sessionCheck.rows.length === 0) {
+			return res.status(404).json({ message: 'Session not found!' });
+		}
+		if (!isAdmin && Number(sessionCheck.rows[0].teacher_id) !== Number(req.user?.id)) {
+			return res.status(403).json({ message: 'Bạn chỉ được kết thúc buổi học của lớp mình.' });
+		}
+
 		const updatedSession = await pool.query(
 			`UPDATE Session SET status = 'completed' WHERE id = $1 RETURNING *`,
 			[id]
@@ -294,9 +369,19 @@ exports.cancelSession = async (req, res) => {
 	const { id } = req.params;
 
 	try {
-		const sessionCheck = await pool.query('SELECT * FROM Session WHERE id = $1', [id]);
+		const isAdmin = isAdminRole(req.user?.role);
+		const sessionCheck = await pool.query(
+			`SELECT s.*, cc.teacher_id
+			 FROM Session s
+			 JOIN Course_classes cc ON cc.id = s.course_class_id
+			 WHERE s.id = $1`,
+			[id]
+		);
 		if (sessionCheck.rows.length === 0) {
 			return res.status(404).json({ message: 'Session not found!' });
+		}
+		if (!isAdmin && Number(sessionCheck.rows[0].teacher_id) !== Number(req.user?.id)) {
+			return res.status(403).json({ message: 'Bạn chỉ được hủy buổi học của lớp mình.' });
 		}
 
 		if (sessionCheck.rows[0].status === 'completed') {
@@ -338,9 +423,19 @@ exports.deleteSession = async (req, res) => {
 	const { id } = req.params;
 
 	try {
-		const existing = await pool.query('SELECT id FROM Session WHERE id = $1', [id]);
+		const isAdmin = isAdminRole(req.user?.role);
+		const existing = await pool.query(
+			`SELECT s.id, cc.teacher_id
+			 FROM Session s
+			 JOIN Course_classes cc ON cc.id = s.course_class_id
+			 WHERE s.id = $1`,
+			[id]
+		);
 		if (existing.rows.length === 0) {
 			return res.status(404).json({ message: 'Session not found for delete!' });
+		}
+		if (!isAdmin && Number(existing.rows[0].teacher_id) !== Number(req.user?.id)) {
+			return res.status(403).json({ message: 'Bạn chỉ được xóa buổi học của lớp mình.' });
 		}
 
 		const deleted = await pool.query(

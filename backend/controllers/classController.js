@@ -1,5 +1,9 @@
 const pool = require('../config/db');
 
+function isAdminRole(role) {
+    return String(role || '').toLowerCase() === 'admin';
+}
+
 function normalizeTeacherIds(input) {
     const raw = Array.isArray(input) ? input : input ? [input] : [];
     const ids = raw
@@ -41,6 +45,7 @@ async function fetchClassWithTeachers(classId) {
 exports.getClass = async (req, res) => {
     try {
         const { page = 1, limit = 10, department, major } = req.query;
+        const isAdmin = isAdminRole(req.user?.role);
 
         const pageNum = parseInt(page, 10);
         const limitNum = parseInt(limit, 10);
@@ -64,7 +69,16 @@ exports.getClass = async (req, res) => {
             paramIndex++;
         }
 
+        if (!isAdmin) {
+            conditions.push(`hct.teacher_id = $${paramIndex}`);
+            values.push(Number(req.user?.id));
+            paramIndex++;
+        }
+
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        const joinClause = isAdmin
+            ? 'LEFT JOIN Home_class_teachers hct ON hct.home_class_id = hc.id'
+            : 'JOIN Home_class_teachers hct ON hct.home_class_id = hc.id';
 
         const dataQuery = `
             SELECT hc.*,
@@ -82,7 +96,7 @@ exports.getClass = async (req, res) => {
                        '[]'::json
                    ) AS teachers
             FROM Home_class hc
-            LEFT JOIN Home_class_teachers hct ON hct.home_class_id = hc.id
+            ${joinClause}
             LEFT JOIN Teacher t ON t.id = hct.teacher_id
             ${whereClause}
             GROUP BY hc.id
@@ -91,7 +105,8 @@ exports.getClass = async (req, res) => {
         `;
         const dataValues = [...values, limitNum, offset];
         const countQuery = `
-            SELECT COUNT(*) FROM Home_class hc
+            SELECT COUNT(DISTINCT hc.id) FROM Home_class hc
+            ${joinClause}
             ${whereClause}
         `;
         const [dataResult, countResult] = await Promise.all([
