@@ -47,12 +47,21 @@ export type ClassItem = {
   major?: string;
   department?: string;
   created_at?: string;
+  teacher_ids?: number[];
+  teachers?: Array<{
+    id: number;
+    teacher_code?: string;
+    teacher_name?: string;
+    email?: string;
+    role?: string;
+  }>;
 };
 
 export type CreateClassPayload = {
   class_code?: string;
   major?: string;
   department?: string;
+  teacher_ids?: number[];
 };
 
 export type CourseItem = {

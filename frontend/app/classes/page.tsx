@@ -10,13 +10,19 @@ import { ErrorState, LoadingState } from "@/components/ui/States";
 import { classService } from "@/services/class.service";
 import type { ClassItem, CreateClassPayload } from "@/types/models";
 import { ClassIcons, HomeClassIcons } from "@/components/icons";
+import { useAuth } from "@/hooks/useAuth";
+import { teacherService, TeacherInfo } from "@/services/teacher.service";
 
 export default function ClassesPage() {
     const router = useRouter();
-    const canUpdateClass = true;
-    const canDeleteClass = true;
+    const { user } = useAuth();
+    const isAdmin = user.role === "admin";
+    const canUpdateClass = isAdmin;
+    const canDeleteClass = isAdmin;
 
     const [classes, setClasses] = useState<ClassItem[]>([]);
+    const [teachers, setTeachers] = useState<TeacherInfo[]>([]);
+    const [teacherError, setTeacherError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -29,6 +35,7 @@ export default function ClassesPage() {
         class_code: "",
         major: "",
         department: "",
+        teacher_ids: [],
     });
 
     async function loadClasses() {
@@ -48,6 +55,28 @@ export default function ClassesPage() {
     useEffect(() => {
         void loadClasses();
     }, []);
+
+    useEffect(() => {
+        if (!isAdmin) {
+            setTeachers([]);
+            setTeacherError(null);
+            return;
+        }
+
+        async function loadTeachers() {
+            try {
+                setTeacherError(null);
+                const data = await teacherService.getAll();
+                setTeachers(data);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : "Cannot load teachers";
+                setTeacherError(message);
+                setTeachers([]);
+            }
+        }
+
+        void loadTeachers();
+    }, [isAdmin]);
 
     async function onCreateClass(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -80,7 +109,7 @@ export default function ClassesPage() {
             await loadClasses();
             setIsModalOpen(false);
             setEditingClassId(null);
-            setForm({ class_code: "", major: "", department: "" });
+            setForm({ class_code: "", major: "", department: "", teacher_ids: [] });
         } catch (err) {
             const message = err instanceof Error ? err.message : "Cannot create class";
             setModalError(message);
@@ -91,7 +120,7 @@ export default function ClassesPage() {
 
     function onDeleteClass(item: ClassItem) {
         if (!canDeleteClass) {
-            setError("Current backend does not support deleting home classes yet.");
+            setError("Only admin can delete home classes.");
             return;
         }
 
@@ -124,15 +153,36 @@ export default function ClassesPage() {
             class_code: item.class_code ?? "",
             major: item.major ?? "",
             department: item.department ?? "",
+            teacher_ids: item.teacher_ids ?? (Array.isArray(item.teachers) ? item.teachers.map((teacher) => teacher.id) : []),
         });
         setIsModalOpen(true);
     }
 
-    const columns = useMemo(
-        () => [
+    const columns = useMemo(() => {
+        const baseColumns = [
             { key: "code", title: "Class Code", render: (row: ClassItem) => row.class_code ?? "-" },
             { key: "major", title: "Major", render: (row: ClassItem) => row.major ?? "-" },
             { key: "department", title: "Department", render: (row: ClassItem) => row.department ?? "-" },
+            {
+                key: "teachers",
+                title: "Assigned Teachers",
+                render: (row: ClassItem) => {
+                    if (!Array.isArray(row.teachers) || row.teachers.length === 0) {
+                        return "-";
+                    }
+                    return row.teachers
+                        .map((teacher) => teacher.teacher_name || teacher.teacher_code || `#${teacher.id}`)
+                        .join(", ");
+                },
+            },
+        ];
+
+        if (!canUpdateClass) {
+            return baseColumns;
+        }
+
+        return [
+            ...baseColumns,
             {
                 key: "actions",
                 title: "Actions",
@@ -155,9 +205,8 @@ export default function ClassesPage() {
                     </div>
                 ),
             },
-        ],
-        [canUpdateClass],
-    );
+        ];
+    }, [canUpdateClass]);
 
     const totalClasses = classes.length;
     const majorCount = new Set(classes.map((item) => item.major?.trim()).filter(Boolean)).size;
@@ -230,19 +279,24 @@ export default function ClassesPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
                     <div>
                         <p className="ml-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">List Class</p>
+                        {!isAdmin && (
+                            <p className="ml-4 mt-1 text-xs font-medium text-slate-500">Only admin can manage home classes.</p>
+                        )}
                     </div>
-                    <button
-                        type="button"
-                        className="interactive-btn inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
-                        onClick={() => {
-                            setModalError(null);
-                            setEditingClassId(null);
-                            setForm({ class_code: "", major: "", department: "" });
-                            setIsModalOpen(true);
-                        }}
-                    >
-                        <Plus className="h-4 w-4" /> Add Home Class
-                    </button>
+                    {isAdmin && (
+                        <button
+                            type="button"
+                            className="interactive-btn inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                            onClick={() => {
+                                setModalError(null);
+                                setEditingClassId(null);
+                                setForm({ class_code: "", major: "", department: "", teacher_ids: [] });
+                                setIsModalOpen(true);
+                            }}
+                        >
+                            <Plus className="h-4 w-4" /> Add Home Class
+                        </button>
+                    )}
                 </div>
 
                 {/* <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
@@ -306,6 +360,43 @@ export default function ClassesPage() {
                             onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
                         />
                     </div>
+                    {isAdmin && (
+                        <div>
+                            <label className="text-sm font-semibold text-slate-700">Assigned Teachers</label>
+                            {teacherError && (
+                                <p className="mt-1 text-xs font-semibold text-rose-600">{teacherError}</p>
+                            )}
+                            {!teacherError && teachers.length === 0 && (
+                                <p className="mt-1 text-xs font-semibold text-slate-500">No teachers found.</p>
+                            )}
+                            {teachers.length > 0 && (
+                                <div className="mt-2 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                    {teachers.map((teacher) => {
+                                        const checked = Array.isArray(form.teacher_ids) && form.teacher_ids.includes(teacher.id);
+                                        return (
+                                            <label key={teacher.id} className="flex items-center gap-2 text-sm text-slate-700">
+                                                <input
+                                                    type="checkbox"
+                                                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                    checked={checked}
+                                                    onChange={(event) => {
+                                                        const nextIds = new Set(form.teacher_ids ?? []);
+                                                        if (event.target.checked) {
+                                                            nextIds.add(teacher.id);
+                                                        } else {
+                                                            nextIds.delete(teacher.id);
+                                                        }
+                                                        setForm((prev) => ({ ...prev, teacher_ids: Array.from(nextIds) }));
+                                                    }}
+                                                />
+                                                <span>{teacher.teacher_name} ({teacher.teacher_code})</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <button
                         type="submit"
                         className="interactive-btn inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"

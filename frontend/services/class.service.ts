@@ -14,9 +14,16 @@ type HomeClassListResponse = {
 
 function normalizeClassList(payload: ClassItem[] | HomeClassListResponse): ClassItem[] {
   if (Array.isArray(payload)) {
-    return payload;
+    return payload.map((item) => ({
+      ...item,
+      teacher_ids: item.teacher_ids ?? (Array.isArray(item.teachers) ? item.teachers.map((teacher) => teacher.id) : []),
+    }));
   }
-  return Array.isArray(payload?.data) ? payload.data : [];
+  const data = Array.isArray(payload?.data) ? payload.data : [];
+  return data.map((item) => ({
+    ...item,
+    teacher_ids: item.teacher_ids ?? (Array.isArray(item.teachers) ? item.teachers.map((teacher) => teacher.id) : []),
+  }));
 }
 
 export const classService = {
@@ -35,6 +42,7 @@ export const classService = {
       class_code: payload.class_code?.trim() || undefined,
       major: payload.major?.trim() || undefined,
       department: payload.department?.trim() || undefined,
+      teacher_ids: Array.isArray(payload.teacher_ids) ? payload.teacher_ids : undefined,
     };
 
     if (!normalizedPayload.class_code) {
@@ -83,6 +91,7 @@ export const classService = {
       class_code: payload.class_code?.trim() || undefined,
       major: payload.major?.trim() || undefined,
       department: payload.department?.trim() || undefined,
+      teacher_ids: Array.isArray(payload.teacher_ids) ? payload.teacher_ids : undefined,
     };
 
     if (!normalizedPayload.class_code) {
