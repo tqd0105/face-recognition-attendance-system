@@ -10,10 +10,13 @@ import { ErrorState, LoadingState } from "@/components/ui/States";
 import { ClassIcons } from "@/components/icons";
 import { classService } from "@/services/class.service";
 import { courseService } from "@/services/course.service";
+import { useAuth } from "@/hooks/useAuth";
 import type { ClassItem, CourseItem, CreateCoursePayload } from "@/types/models";
 
 export default function CoursesPage() {
     const router = useRouter();
+    const { user } = useAuth();
+    const isAdmin = user.role === "admin";
     const canUpdateCourse = true;
     const canDeleteCourse = true;
 
@@ -353,6 +356,11 @@ export default function CoursesPage() {
                                 </option>
                             ))}
                         </select>
+                        {!isAdmin && (
+                            <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                Bạn chỉ được chọn Home Class được phân công cho mình.
+                            </div>
+                        )}
                     </div>
                     <div>
                         <label className="text-sm font-semibold text-slate-700" htmlFor="course-semester">
