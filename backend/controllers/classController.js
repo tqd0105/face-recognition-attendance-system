@@ -1,5 +1,40 @@
 const pool = require('../config/db');
 
+function normalizeTeacherIds(input) {
+    const raw = Array.isArray(input) ? input : input ? [input] : [];
+    const ids = raw
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0);
+    return Array.from(new Set(ids));
+}
+
+async function fetchClassWithTeachers(classId) {
+    const result = await pool.query(
+        `SELECT hc.*,
+                COALESCE(array_agg(t.id) FILTER (WHERE t.id IS NOT NULL), '{}') AS teacher_ids,
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'id', t.id,
+                            'teacher_code', t.teacher_code,
+                            'teacher_name', t.teacher_name,
+                            'email', t.email,
+                            'role', t.role
+                        )
+                    ) FILTER (WHERE t.id IS NOT NULL),
+                    '[]'::json
+                ) AS teachers
+         FROM Home_class hc
+         LEFT JOIN Home_class_teachers hct ON hct.home_class_id = hc.id
+         LEFT JOIN Teacher t ON t.id = hct.teacher_id
+         WHERE hc.id = $1
+         GROUP BY hc.id`,
+        [classId]
+    );
+
+    return result.rows[0] || null;
+}
+
 // @desc    Lấy danh sách tất cả lớp sinh hoạt 
 // @route   GET /api/home-classes
 // @access  Private (Chỉ Giảng viên đã đăng nhập mới được xem) (Có hỗ trợ phân trang và lọc)
@@ -17,14 +52,14 @@ exports.getClass = async (req, res) => {
 
         // Lọc theo Khoa (department)
         if (department) {
-            conditions.push(`department ILIKE $${paramIndex}`);
+            conditions.push(`hc.department ILIKE $${paramIndex}`);
             values.push(`%${department}%`);
             paramIndex++;
         }
 
         // Lọc theo Ngành (major)
         if (major) {
-            conditions.push(`major ILIKE $${paramIndex}`);
+            conditions.push(`hc.major ILIKE $${paramIndex}`);
             values.push(`%${major}%`);
             paramIndex++;
         }
@@ -32,14 +67,31 @@ exports.getClass = async (req, res) => {
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
         const dataQuery = `
-            SELECT * FROM Home_class 
-            ${whereClause} 
-            ORDER BY created_at DESC 
+            SELECT hc.*,
+                   COALESCE(array_agg(t.id) FILTER (WHERE t.id IS NOT NULL), '{}') AS teacher_ids,
+                   COALESCE(
+                       json_agg(
+                           json_build_object(
+                               'id', t.id,
+                               'teacher_code', t.teacher_code,
+                               'teacher_name', t.teacher_name,
+                               'email', t.email,
+                               'role', t.role
+                           )
+                       ) FILTER (WHERE t.id IS NOT NULL),
+                       '[]'::json
+                   ) AS teachers
+            FROM Home_class hc
+            LEFT JOIN Home_class_teachers hct ON hct.home_class_id = hc.id
+            LEFT JOIN Teacher t ON t.id = hct.teacher_id
+            ${whereClause}
+            GROUP BY hc.id
+            ORDER BY hc.created_at DESC
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
         `;
         const dataValues = [...values, limitNum, offset];
         const countQuery = `
-            SELECT COUNT(*) FROM Home_class 
+            SELECT COUNT(*) FROM Home_class hc
             ${whereClause}
         `;
         const [dataResult, countResult] = await Promise.all([
@@ -72,6 +124,7 @@ exports.getClass = async (req, res) => {
 // @access  Private
 exports.createClass = async (req, res) => {
     const { class_code, major, department } = req.body;
+    const teacherIds = normalizeTeacherIds(req.body?.teacher_ids ?? req.body?.teacherIds);
 
     try {
         // 1. Kiểm tra xem mã lớp đã bị trùng
@@ -80,15 +133,37 @@ exports.createClass = async (req, res) => {
             return res.status(400).json({ message: 'This class code already exists in the system!' });
         }
 
+        if (teacherIds.length > 0) {
+            const existingTeachers = await pool.query(
+                'SELECT id FROM Teacher WHERE id = ANY($1::int[])',
+                [teacherIds]
+            );
+
+            if (existingTeachers.rows.length !== teacherIds.length) {
+                return res.status(400).json({ message: 'One or more teacher_ids are invalid.' });
+            }
+        }
+
         // 2. Thêm lớp mới vào DB
         const newClass = await pool.query(
             'INSERT INTO Home_class (class_code, major, department) VALUES ($1, $2, $3) RETURNING *',
             [class_code, major, department]
         );
 
+        if (teacherIds.length > 0) {
+            await pool.query(
+                `INSERT INTO Home_class_teachers (home_class_id, teacher_id)
+                 SELECT $1, UNNEST($2::int[])
+                 ON CONFLICT DO NOTHING`,
+                [newClass.rows[0].id, teacherIds]
+            );
+        }
+
+        const response = await fetchClassWithTeachers(newClass.rows[0].id);
+
         res.status(201).json({
             message: 'Home class created successfully',
-            data: newClass.rows[0]
+            data: response || newClass.rows[0]
         });
     } catch (error) {
         console.error(error.message);
@@ -102,6 +177,8 @@ exports.createClass = async (req, res) => {
 exports.updateClass = async (req, res) => {
     const { id } = req.params;
     const { class_code, major, department } = req.body;
+    const hasTeacherIds = Array.isArray(req.body?.teacher_ids) || Array.isArray(req.body?.teacherIds);
+    const teacherIds = normalizeTeacherIds(req.body?.teacher_ids ?? req.body?.teacherIds ?? []);
 
     try {
         const checkExist = await pool.query(
@@ -111,6 +188,17 @@ exports.updateClass = async (req, res) => {
 
         if (checkExist.rows.length > 0) {
             return res.status(400).json({ message: 'This class code already exists in the system!' });
+        }
+
+        if (hasTeacherIds && teacherIds.length > 0) {
+            const existingTeachers = await pool.query(
+                'SELECT id FROM Teacher WHERE id = ANY($1::int[])',
+                [teacherIds]
+            );
+
+            if (existingTeachers.rows.length !== teacherIds.length) {
+                return res.status(400).json({ message: 'One or more teacher_ids are invalid.' });
+            }
         }
 
         const updated = await pool.query(
@@ -125,9 +213,24 @@ exports.updateClass = async (req, res) => {
             return res.status(404).json({ message: 'Home class not found for update!' });
         }
 
+        if (hasTeacherIds) {
+            await pool.query('DELETE FROM Home_class_teachers WHERE home_class_id = $1', [id]);
+
+            if (teacherIds.length > 0) {
+                await pool.query(
+                    `INSERT INTO Home_class_teachers (home_class_id, teacher_id)
+                     SELECT $1, UNNEST($2::int[])
+                     ON CONFLICT DO NOTHING`,
+                    [id, teacherIds]
+                );
+            }
+        }
+
+        const response = await fetchClassWithTeachers(id);
+
         return res.status(200).json({
             message: 'Home class updated successfully!',
-            data: updated.rows[0],
+            data: response || updated.rows[0],
         });
     } catch (error) {
         console.error(error.message);

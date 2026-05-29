@@ -28,6 +28,17 @@ CREATE TABLE IF NOT EXISTS Home_class (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS Home_class_teachers (
+    id SERIAL PRIMARY KEY,
+    home_class_id INTEGER REFERENCES Home_class(id) ON DELETE CASCADE,
+    teacher_id INTEGER REFERENCES Teacher(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(home_class_id, teacher_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_home_class_teachers_class_id ON Home_class_teachers(home_class_id);
+CREATE INDEX IF NOT EXISTS idx_home_class_teachers_teacher_id ON Home_class_teachers(teacher_id);
+
 CREATE TABLE IF NOT EXISTS Student (
     id SERIAL PRIMARY KEY,
     student_code VARCHAR(50) UNIQUE NOT NULL,
@@ -43,7 +54,7 @@ CREATE TABLE IF NOT EXISTS Student (
 CREATE TABLE IF NOT EXISTS Face_embeddings (
     id SERIAL PRIMARY KEY,
     student_id INTEGER REFERENCES Student(id) ON DELETE CASCADE,
-    embedding vector(512), 
+    embedding vector(512),
     quality_score FLOAT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -99,7 +110,7 @@ CREATE TABLE IF NOT EXISTS Session (
     session_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
-    status session_status DEFAULT 'scheduled', 
+    status session_status DEFAULT 'scheduled',
     created_by INTEGER REFERENCES Teacher(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CHECK (start_time < end_time)
@@ -112,5 +123,5 @@ CREATE TABLE IF NOT EXISTS Attendance (
     check_in_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status attendance_status DEFAULT 'present',
     confidence_score FLOAT,
-    UNIQUE(session_id, student_id) 
+    UNIQUE(session_id, student_id)
 );
