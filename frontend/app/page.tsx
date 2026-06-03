@@ -282,7 +282,7 @@ export default function DashboardPage() {
 
     return (
         <main className="motion-page min-h-screen px-1 py-1 sm:px-2">
-            <section className="rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.45)] sm:p-6">
+            <section className="mt-12 lg:mt-0 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.45)] sm:p-6">
                 <header className="flex flex-col gap-4 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-cyan-900 p-5 text-white shadow-xl sm:flex-row sm:items-center sm:justify-between sm:p-7">
                     <div className="flex items-center gap-4">
                         <div className="rounded-2xl bg-white/15 p-3 ring-1 ring-white/20">

@@ -70,8 +70,8 @@ export default function AttendancePage() {
     const [checkedStudentIds, setCheckedStudentIds] = useState<number[]>([]);
     const [lastSeenByStudent, setLastSeenByStudent] = useState<Record<string, string>>({});
 
-    const realtimeThreshold = 0.8;
-    const oneFaceThreshold = 0.8;
+    const realtimeThreshold = 0.75;
+    const oneFaceThreshold = 0.75;
     const scanIntervalMs = 420;
     const querySessionId = searchParams.get("session")?.trim() ?? "";
     const sourcePage = searchParams.get("source")?.trim() ?? "";
